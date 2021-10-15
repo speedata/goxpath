@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestNCName(t *testing.T) {
+	testdata := []struct {
+		input  token
+		output bool
+	}{
+		{token{TokNumber, 1}, false},
+	}
+	for _, td := range testdata {
+		got := td.input.isNCName()
+		if expected := td.output; got != expected {
+			t.Errorf("%v isNCName() = %t, want %t", td.input, got, expected)
+		}
+	}
+}
+
 func TestGetQName(t *testing.T) {
 	testdata := []struct {
 		input  string

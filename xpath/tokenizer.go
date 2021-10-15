@@ -32,9 +32,42 @@ const (
 	TokQName
 )
 
+func (tt tokenType) String() string {
+	switch tt {
+	case TokAny:
+		return "Any token"
+	case TokString:
+		return "string"
+	case TokVarname:
+		return "variable name"
+	case TokNumber:
+		return "number"
+	case TokOperator:
+		return "operator"
+	case TokOpenParen:
+		return "open paren"
+	case TokCloseParen:
+		return "close paren"
+	case TokOpenBracket:
+		return "open bracket"
+	case TokCloseBracket:
+		return "close bracket"
+	case TokQName:
+		return "QName"
+	}
+	return "--"
+}
+
 type token struct {
 	Value interface{}
 	Typ   tokenType
+}
+
+func (tok *token) isNCName() bool {
+	if tok.Typ != TokQName {
+		return false
+	}
+	return !strings.ContainsRune(tok.Value.(string), ':')
 }
 
 type tokens []token
@@ -51,6 +84,10 @@ func (tok token) String() string {
 	switch tok.Typ {
 	case TokVarname:
 		return "$" + tok.Value.(string)
+	case TokOpenParen:
+		return "("
+	case TokCloseParen:
+		return ")"
 	}
 
 	switch v := tok.Value.(type) {
@@ -73,9 +110,44 @@ func (tl *tokenlist) peek() (*token, error) {
 	return &tl.toks[tl.pos+1], nil
 }
 
-func (tl *tokenlist) next() (*token, error) {
+func (tl *tokenlist) read() (*token, error) {
+	if len(tl.toks) == tl.pos {
+		return nil, io.EOF
+	}
 	tl.pos++
 	return &tl.toks[tl.pos-1], nil
+}
+
+func (tl *tokenlist) unread() error {
+	tl.pos--
+	return nil
+}
+
+func (tl *tokenlist) skipType(typ tokenType) error {
+	var val *token
+	var err error
+	if val, err = tl.read(); err != nil {
+		return err
+	}
+	if val.Typ != typ {
+		return fmt.Errorf("expect %s, got %s", typ, val.Typ)
+	}
+	return nil
+}
+
+func (tl *tokenlist) skipNCName(name string) error {
+	var val *token
+	var err error
+	if val, err = tl.read(); err != nil {
+		return err
+	}
+	if !val.isNCName() {
+		return fmt.Errorf("expect %s, got %s", name, val.Typ)
+	}
+	if str, ok := val.Value.(string); ok && str != name {
+		return fmt.Errorf("expect %s, got %s", name, str)
+	}
+	return nil
 }
 
 func getNum(sr *strings.Reader) float64 {
