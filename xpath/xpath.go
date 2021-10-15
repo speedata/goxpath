@@ -2,7 +2,51 @@ package xpath
 
 import (
 	"fmt"
+	"io"
+	"strings"
 )
+
+var xpathfunctions map[string]*Function
+
+func init() {
+	xpathfunctions = make(map[string]*Function)
+
+	fnTrue := &Function{
+		Name:      "true",
+		Namespace: "http://www.w3.org/2005/xpath-functions",
+		F:         func(s sequence) sequence { return sequence{true} },
+		MaxArg:    0,
+		MinArg:    0,
+	}
+	RegisterFunction(fnTrue)
+
+	fnFalse := &Function{
+		Name:      "false",
+		Namespace: "http://www.w3.org/2005/xpath-functions",
+		F:         func(s sequence) sequence { return sequence{false} },
+		MaxArg:    0,
+		MinArg:    0,
+	}
+	RegisterFunction(fnFalse)
+}
+
+// Function represents an XPath function
+type Function struct {
+	Name      string
+	Namespace string
+	F         func(sequence) sequence
+	MinArg    int
+	MaxArg    int
+}
+
+// RegisterFunction registers an XPath function
+func RegisterFunction(f *Function) {
+	xpathfunctions[f.Name] = f
+}
+
+func getfunction(name string) *Function {
+	return xpathfunctions[name]
+}
 
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
@@ -12,6 +56,16 @@ type context struct{}
 type item interface{}
 
 type sequence []item
+
+func (s sequence) String() string {
+	var sb strings.Builder
+	sb.WriteString(`( `)
+	for _, itm := range s {
+		fmt.Fprintf(&sb, "%v", itm)
+	}
+	sb.WriteString(` )`)
+	return sb.String()
+}
 
 type evalFunc func(context) (sequence, error)
 
@@ -86,9 +140,11 @@ func booleanValue(s sequence) (bool, error) {
 	if len(s) == 0 {
 		return false, nil
 	}
+	fmt.Println(s)
 	// if s[0] is a node, return true
 	if len(s) == 1 {
 		itm := s[0]
+		fmt.Printf("itm %#v\n", itm)
 		if b, ok := itm.(bool); ok {
 			return b, nil
 		} else if val, ok := itm.(string); ok {
@@ -205,9 +261,8 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 		}
 		if bv {
 			return thenpart(ctx)
-		} else {
-			return elsepart(ctx)
 		}
+		return elsepart(ctx)
 	}
 	leaveStep(tl, "7 parseIfExpr")
 	return f, nil
@@ -459,18 +514,61 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 // [41] PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall
 func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "41 parsePrimaryExpr")
+	var ef evalFunc
 
 	nexttok, err := tl.read()
 	if err != nil {
 		return nil, err
 	}
-
-	var ef evalFunc
+	peek, err := tl.peek()
+	if err != nil {
+		if err != io.EOF {
+			return nil, err
+		}
+	} else {
+		if peek.Typ == TokOpenParen {
+			tl.unread()
+			return parseFunctionCall(tl)
+		}
+	}
 	ef = func(ctx context) (sequence, error) {
 		fmt.Println("eval PrimaryExpr")
 		return sequence{nexttok.Value}, nil
 	}
 	leaveStep(tl, "41 parsePrimaryExpr")
+	return ef, nil
+}
+
+//  [48] FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"
+func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "48 parseFunctionCall")
+	var ef evalFunc
+
+	functionName, err := tl.read()
+	if err != nil {
+		return nil, err
+	}
+	if err = tl.skipType(TokOpenParen); err != nil {
+		return nil, err
+	}
+	peek, err := tl.peek()
+	if err != nil {
+		return nil, err
+	}
+
+	if peek.Typ == TokCloseParen {
+		// shortcut, func()
+		tl.read()
+		ef = func(ctx context) (sequence, error) {
+			fn := getfunction(functionName.Value.(string))
+			return fn.F(sequence{}), nil
+		}
+	} else {
+		// get expr single *
+		fmt.Println(functionName)
+	}
+
+	leaveStep(tl, "48 parseFunctionCall")
 	return ef, nil
 }
 
@@ -548,7 +646,7 @@ func Dothings() error {
 	//  }
 	//  fmt.Println("d", d.ToXML())
 	// }
-	tl, err := stringToTokenlist(`if ( 0 ) then 'a' else 'b'`)
+	tl, err := stringToTokenlist(`if ( false() ) then 'a' else 'b'`)
 	if err != nil {
 		return err
 	}

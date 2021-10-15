@@ -107,7 +107,10 @@ type tokenlist struct {
 }
 
 func (tl *tokenlist) peek() (*token, error) {
-	return &tl.toks[tl.pos+1], nil
+	if len(tl.toks) == tl.pos {
+		return nil, io.EOF
+	}
+	return &tl.toks[tl.pos], nil
 }
 
 func (tl *tokenlist) read() (*token, error) {

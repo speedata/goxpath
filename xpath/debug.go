@@ -8,11 +8,13 @@ import (
 var debuglevel int
 
 func enterStep(tl *tokenlist, step string) {
-	fmt.Println(strings.Repeat("  ", debuglevel), ">>", step)
+	peek, _ := tl.peek()
+	fmt.Println(strings.Repeat("  ", debuglevel), ">>", step, peek)
 	debuglevel++
 }
 
 func leaveStep(tl *tokenlist, step string) {
+	peek, _ := tl.peek()
 	debuglevel--
-	fmt.Println(strings.Repeat("  ", debuglevel), "<<", step)
+	fmt.Println(strings.Repeat("  ", debuglevel), "<<", step, peek)
 }
