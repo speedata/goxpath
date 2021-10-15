@@ -96,7 +96,7 @@ func parse(tl *tokenlist) (evalFunc, error) {
 	}
 
 	switch op.Value {
-	case '+':
+	case "+":
 		fn = add
 	default:
 		fmt.Println("parse error, unknown function fn", op.Value)
@@ -140,10 +140,11 @@ func Dothings() error {
 	// 	}
 	// 	fmt.Println("d", d.ToXML())
 	// }
-	tl, err := stringToTokenlist(".2E-2 +  3")
+	tl, err := stringToTokenlist(".2E-2 + 3")
 	if err != nil {
 		return err
 	}
+	fmt.Println(tl.toks)
 
 	evaler, err := parse(tl)
 	seq, err := evaler(context{})
