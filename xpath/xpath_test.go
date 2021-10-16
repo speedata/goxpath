@@ -45,6 +45,26 @@ func TestEval(t *testing.T) {
 		{`false() or true()`, sequence{true}},
 		{`false() or false()`, sequence{false}},
 		{`true() or false()`, sequence{true}},
+		{`true() and false()`, sequence{false}},
+		{`true() and true()`, sequence{true}},
+		{`4 < 2  or 5 < 7`, sequence{true}},
+		{`2 > 4 or 3 > 5 or 6 > 2`, sequence{true}},
+		{`4 < 2  or 7 < 5`, sequence{false}},
+		{`not( 3 < 6 )`, sequence{false}},
+		{`not( 6 < 3 )`, sequence{true}},
+		{`not( true() )`, sequence{false}},
+		{`concat('abc','def')`, sequence{"abcdef"}},
+		{`boolean(1)`, sequence{true}},
+		{`boolean(0)`, sequence{false}},
+		{`boolean(false())`, sequence{false}},
+		{`boolean(true())`, sequence{true}},
+		{`boolean('')`, sequence{false}},
+		{`boolean('false')`, sequence{true}},
+
+		// assert_false(eval1(" boolean( (false()) )"))
+		// assert_true(eval1("  boolean( (true()) )"))
+		// assert_false(eval1(" boolean( () )"))
+
 	}
 	for _, td := range testdata {
 		tl, err := stringToTokenlist(td.input)

@@ -27,6 +27,14 @@ func (s sequence) String() string {
 	return sb.String()
 }
 
+func (s sequence) stringvalue() string {
+	var sb strings.Builder
+	for _, itm := range s {
+		fmt.Fprintf(&sb, "%s", itm)
+	}
+	return sb.String()
+}
+
 type evalFunc func(context) (sequence, error)
 
 type adder func(item, item) (item, error)
@@ -340,10 +348,54 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 // [9] AndExpr ::= ComparisonExpr ( "and" ComparisonExpr )*
 func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "9 parseAndExpr")
+
 	var ef evalFunc
+	var efs []evalFunc
 	ef, err := parseComparisonExpr(tl)
 	if err != nil {
 		return nil, err
+	}
+	efs = append(efs, ef)
+	for {
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if peek.Value == "and" {
+			tl.read()
+			ef, err = parseComparisonExpr(tl)
+			if err != nil {
+				return nil, err
+			}
+			efs = append(efs, ef)
+		} else {
+			break
+		}
+	}
+	if len(efs) == 1 {
+		return efs[0], nil
+	}
+
+	ef = func(ctx context) (sequence, error) {
+		for _, ef := range efs {
+			s, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			b, err := booleanValue(s)
+			if err != nil {
+				return nil, err
+			}
+			if !b {
+				return sequence{false}, nil
+			}
+
+		}
+		return sequence{true}, nil
 	}
 
 	leaveStep(tl, "9 parseAndExpr")
@@ -617,13 +669,18 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "48 parseFunctionCall")
 	var ef evalFunc
 
-	functionName, err := tl.read()
+	functionNameToken, err := tl.read()
 	if err != nil {
 		return nil, err
 	}
 	if err = tl.skipType(TokOpenParen); err != nil {
 		return nil, err
 	}
+	functionName := functionNameToken.Value.(string)
+	if !hasFunction(functionName) {
+		return nil, fmt.Errorf("function %q not defined", functionName)
+	}
+
 	peek, err := tl.peek()
 	if err != nil {
 		return nil, err
@@ -633,12 +690,43 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		// shortcut, func()
 		tl.read()
 		ef = func(ctx context) (sequence, error) {
-			fn := getfunction(functionName.Value.(string))
-			return fn.F(sequence{}), nil
+			return callFunction(functionName, []sequence{})
 		}
 	} else {
+		var efs []evalFunc
+
+		for {
+			es, err := parseExprSingle(tl)
+			if err != nil {
+				return nil, err
+			}
+			efs = append(efs, es)
+			peek, err := tl.peek()
+			if err != nil {
+				return nil, err
+			}
+			if peek.Typ == TokCloseParen {
+				break
+			}
+			if !(peek.Typ == TokComma) {
+				return nil, fmt.Errorf("comma expected, found %v", peek)
+			}
+			tl.read()
+		}
 		// get expr single *
-		fmt.Println(functionName)
+		ef = func(ctx context) (sequence, error) {
+			var arguments []sequence
+			for _, es := range efs {
+				seq, err := es(ctx)
+				if err != nil {
+					return nil, err
+				}
+				arguments = append(arguments, seq)
+			}
+
+			return callFunction(functionName, arguments)
+		}
+
 	}
 
 	leaveStep(tl, "48 parseFunctionCall")
@@ -669,7 +757,7 @@ func Dothings() error {
 	//  }
 	//  fmt.Println("d", d.ToXML())
 	// }
-	tl, err := stringToTokenlist(` false() or false() `)
+	tl, err := stringToTokenlist(` concat('abc','def') `)
 	if err != nil {
 		return err
 	}

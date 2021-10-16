@@ -30,6 +30,8 @@ const (
 	TokCloseBracket
 	// TokQName is a QName (which might contain one colon).
 	TokQName
+	// TokComma represents a comma
+	TokComma
 )
 
 func (tt tokenType) String() string {
@@ -54,6 +56,8 @@ func (tt tokenType) String() string {
 		return "close bracket"
 	case TokQName:
 		return "QName"
+	case TokComma:
+		return "comma"
 	}
 	return "--"
 }
@@ -267,8 +271,10 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 		if '0' <= r && r <= '9' || r == '.' {
 			sr.UnreadRune()
 			tokens = append(tokens, token{getNum(sr), TokNumber})
-		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '|' || r == ',' || r == '=' {
+		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '|' || r == '=' {
 			tokens = append(tokens, token{string(r), TokOperator})
+		} else if r == ',' {
+			tokens = append(tokens, token{string(r), TokComma})
 		} else if r == '>' || r == '<' {
 			nextRune, _, err := sr.ReadRune()
 			if err != nil {
