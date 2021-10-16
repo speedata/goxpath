@@ -6,54 +6,14 @@ import (
 	"strings"
 )
 
-var xpathfunctions map[string]*Function
-
-func init() {
-	xpathfunctions = make(map[string]*Function)
-
-	fnTrue := &Function{
-		Name:      "true",
-		Namespace: "http://www.w3.org/2005/xpath-functions",
-		F:         func(s sequence) sequence { return sequence{true} },
-		MaxArg:    0,
-		MinArg:    0,
-	}
-	RegisterFunction(fnTrue)
-
-	fnFalse := &Function{
-		Name:      "false",
-		Namespace: "http://www.w3.org/2005/xpath-functions",
-		F:         func(s sequence) sequence { return sequence{false} },
-		MaxArg:    0,
-		MinArg:    0,
-	}
-	RegisterFunction(fnFalse)
-}
-
-// Function represents an XPath function
-type Function struct {
-	Name      string
-	Namespace string
-	F         func(sequence) sequence
-	MinArg    int
-	MaxArg    int
-}
-
-// RegisterFunction registers an XPath function
-func RegisterFunction(f *Function) {
-	xpathfunctions[f.Name] = f
-}
-
-func getfunction(name string) *Function {
-	return xpathfunctions[name]
-}
-
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
 
 type context struct{}
 
 type item interface{}
+
+type compareFunc func(interface{}, interface{}) (bool, error)
 
 type sequence []item
 
@@ -72,7 +32,6 @@ type evalFunc func(context) (sequence, error)
 type adder func(item, item) (item, error)
 
 func add(left, right item) (item, error) {
-	fmt.Println("call adder")
 	var lvalue float64
 	var rvalue float64
 	if seq, ok := left.(sequence); ok {
@@ -108,30 +67,47 @@ func add(left, right item) (item, error) {
 	}
 
 	a := lvalue + rvalue
-	fmt.Println(a)
+
 	return a, nil
 }
 
-func getLeft(tl *tokenlist) (evalFunc, error) {
-	t, err := tl.read()
-	if err != nil {
-		return nil, err
-	}
-	f := func(ctx context) (sequence, error) {
-		fmt.Println("eval getLeft")
-		return sequence{t.Value}, nil
-	}
-	return f, nil
+func isEqual(a, b interface{}) (bool, error) {
+	return a == b, nil
 }
 
-func getRight(tl *tokenlist) (evalFunc, error) {
-	t, err := tl.read()
-	if err != nil {
-		return nil, err
+func isLess(a, b interface{}) (bool, error) {
+	if left, ok := a.(float64); ok {
+		if right, ok := b.(float64); ok {
+			return left < right, nil
+		}
 	}
+	return false, fmt.Errorf("FORG0001")
+}
+
+func doCompare(cf compareFunc, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 	f := func(ctx context) (sequence, error) {
-		fmt.Println("eval getRight")
-		return sequence{t.Value}, nil
+		left, err := lhs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		right, err := rhs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var isCompare bool
+		for _, leftitem := range left {
+			for _, rightitem := range right {
+				ok, err := cf(leftitem, rightitem)
+				if err != nil {
+					return nil, err
+				}
+				if ok {
+					isCompare = true
+					break
+				}
+			}
+		}
+		return sequence{isCompare}, nil
 	}
 	return f, nil
 }
@@ -140,11 +116,9 @@ func booleanValue(s sequence) (bool, error) {
 	if len(s) == 0 {
 		return false, nil
 	}
-	fmt.Println(s)
 	// if s[0] is a node, return true
 	if len(s) == 1 {
 		itm := s[0]
-		fmt.Printf("itm %#v\n", itm)
 		if b, ok := itm.(bool); ok {
 			return b, nil
 		} else if val, ok := itm.(string); ok {
@@ -215,38 +189,32 @@ func parseExprSingle(tl *tokenlist) (evalFunc, error) {
 // [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "7 parseIfExpr")
-	nexttok, err := tl.read()
-	if err != nil {
+	var nexttok *token
+	var err error
+	var boolEval, thenpart, elsepart evalFunc
+
+	if nexttok, err = tl.read(); err != nil {
 		return nil, err
 	}
 	if nexttok.Typ != TokOpenParen {
 		return nil, fmt.Errorf("open parenthesis expected, found %v", nexttok.Value)
 	}
-	boolEval, err := parseExpr(tl)
-	if err != nil {
+	if boolEval, err = parseExpr(tl); err != nil {
 		return nil, err
 	}
-
-	err = tl.skipType(TokCloseParen)
-	if err != nil {
+	if err = tl.skipType(TokCloseParen); err != nil {
 		return nil, err
 	}
-
 	if err = tl.skipNCName("then"); err != nil {
 		return nil, err
 	}
-
-	thenpart, err := parseExprSingle(tl)
-	if err != nil {
+	if thenpart, err = parseExprSingle(tl); err != nil {
 		return nil, err
 	}
-
 	if err = tl.skipNCName("else"); err != nil {
 		return nil, err
 	}
-
-	elsepart, err := parseExprSingle(tl)
-	if err != nil {
+	if elsepart, err = parseExprSingle(tl); err != nil {
 		return nil, err
 	}
 
@@ -296,14 +264,36 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 // [10] ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp| NodeComp) RangeExpr )?
 func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "10 parseComparisonExpr")
-	var ef evalFunc
-	ef, err := parseRangeExpr(tl)
+	var lhs, rhs evalFunc
+	var err error
+	if lhs, err = parseRangeExpr(tl); err != nil {
+		return nil, err
+	}
+	peek, err := tl.peek()
+	if err == io.EOF {
+		return lhs, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
+	pv := peek.Value
+	if pv == "=" || pv == "<" {
+		tl.read()
+		if rhs, err = parseRangeExpr(tl); err != nil {
+			return nil, err
+		}
+		switch peek.Value {
+		case "=":
+			return doCompare(isEqual, lhs, rhs)
+		case "<":
+			return doCompare(isLess, lhs, rhs)
+		}
+
+	}
+
 	leaveStep(tl, "10 parseComparisonExpr")
-	return ef, nil
+	return lhs, nil
 }
 
 // [11] RangeExpr  ::=  AdditiveExpr ( "to" AdditiveExpr )?
@@ -532,7 +522,6 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		}
 	}
 	ef = func(ctx context) (sequence, error) {
-		fmt.Println("eval PrimaryExpr")
 		return sequence{nexttok.Value}, nil
 	}
 	leaveStep(tl, "41 parsePrimaryExpr")
@@ -578,56 +567,6 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 	return ef, nil
-	// f := func(ctx context) (sequence, error) {
-	//  var err error
-	//  // seq, err := ef(ctx)
-	//  if err != nil {
-	//   return nil, err
-	//  }
-
-	//  return sequence{1}, nil
-	// }
-	// return f, nil
-
-	// var left, right evalFunc
-	// var err error
-	// var op *token
-	// var fn adder
-
-	// if left, err = getLeft(tl); err != nil {
-	//  return nil, err
-	// }
-	// if op, err = tl.next(); err != nil {
-	//  return nil, err
-	// }
-
-	// switch op.Value {
-	// case "+":
-	//  fn = add
-	// default:
-	//  fmt.Println("parse error, unknown function fn", op.Value)
-	// }
-
-	// if right, err = getRight(tl); err != nil {
-	//  return nil, err
-	// }
-
-	// return func(ctx context) (sequence, error) {
-	//  fmt.Println("eval parse")
-	//  var lvalue, rvalue sequence
-	//  var it item
-	//  if lvalue, err = left(ctx); err != nil {
-	//   return nil, err
-	//  }
-	//  if rvalue, err = right(ctx); err != nil {
-	//   return nil, err
-	//  }
-
-	//  if it, err = fn(lvalue, rvalue); err != nil {
-	//   return nil, err
-	//  }
-	//  return sequence{it}, nil
-	// }, nil
 }
 
 // Dothings ..
@@ -646,7 +585,7 @@ func Dothings() error {
 	//  }
 	//  fmt.Println("d", d.ToXML())
 	// }
-	tl, err := stringToTokenlist(`if ( false() ) then 'a' else 'b'`)
+	tl, err := stringToTokenlist(`2 = 2`)
 	if err != nil {
 		return err
 	}

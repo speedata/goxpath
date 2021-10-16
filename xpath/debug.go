@@ -5,16 +5,27 @@ import (
 	"strings"
 )
 
-var debuglevel int
+var (
+	debugIndentLevel int
+	doDebug          bool
+)
+
+func init() {
+	doDebug = false
+}
 
 func enterStep(tl *tokenlist, step string) {
-	peek, _ := tl.peek()
-	fmt.Println(strings.Repeat("  ", debuglevel), ">>", step, peek)
-	debuglevel++
+	if doDebug {
+		peek, _ := tl.peek()
+		fmt.Println(strings.Repeat("  ", debugIndentLevel), ">>", step, peek)
+		debugIndentLevel++
+	}
 }
 
 func leaveStep(tl *tokenlist, step string) {
-	peek, _ := tl.peek()
-	debuglevel--
-	fmt.Println(strings.Repeat("  ", debuglevel), "<<", step, peek)
+	if doDebug {
+		peek, _ := tl.peek()
+		debugIndentLevel--
+		fmt.Println(strings.Repeat("  ", debugIndentLevel), "<<", step, peek)
+	}
 }
