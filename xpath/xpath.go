@@ -286,10 +286,53 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "8 parseOrExpr")
 	var ef evalFunc
+	var efs []evalFunc
 	ef, err := parseAndExpr(tl)
 	if err != nil {
 		return nil, err
 	}
+	efs = append(efs, ef)
+	for {
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if peek.Value == "or" {
+			tl.read()
+			ef, err = parseAndExpr(tl)
+			if err != nil {
+				return nil, err
+			}
+			efs = append(efs, ef)
+		} else {
+			break
+		}
+	}
+	if len(efs) == 1 {
+		return efs[0], nil
+	}
+	ef = func(ctx context) (sequence, error) {
+		for _, ef := range efs {
+			s, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			b, err := booleanValue(s)
+			if err != nil {
+				return nil, err
+			}
+			if b {
+				return sequence{true}, nil
+			}
+
+		}
+		return sequence{false}, nil
+	}
+
 	leaveStep(tl, "8 parseOrExpr")
 	return ef, nil
 }
@@ -626,7 +669,7 @@ func Dothings() error {
 	//  }
 	//  fmt.Println("d", d.ToXML())
 	// }
-	tl, err := stringToTokenlist(`2 = 2`)
+	tl, err := stringToTokenlist(` false() or false() `)
 	if err != nil {
 		return err
 	}

@@ -42,6 +42,9 @@ func TestEval(t *testing.T) {
 		{`'abc' = 'abc'`, sequence{true}},
 		{`'aA' < 'aa'`, sequence{true}},
 		{`'aA' != 'aa'`, sequence{true}},
+		{`false() or true()`, sequence{true}},
+		{`false() or false()`, sequence{false}},
+		{`true() or false()`, sequence{true}},
 	}
 	for _, td := range testdata {
 		tl, err := stringToTokenlist(td.input)
