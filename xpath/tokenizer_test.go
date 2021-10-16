@@ -89,7 +89,7 @@ func TestOperator(t *testing.T) {
 		{`// `, []token{{`//`, TokOperator}}},
 		{`: `, []token{{`:`, TokOperator}}},
 		{`:: `, []token{{`::`, TokOperator}}},
-		{`(1,2)`, []token{{'(', TokOpenParen}, {1.0, TokNumber}, {`,`, TokOperator}, {2.0, TokNumber}, {')', TokCloseParen}}},
+		{`(1,2)`, []token{{'(', TokOpenParen}, {1.0, TokNumber}, {`,`, TokComma}, {2.0, TokNumber}, {')', TokCloseParen}}},
 		{`$hello`, []token{{"hello", TokVarname}}},
 	}
 	for _, td := range testdata {

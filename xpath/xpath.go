@@ -3,13 +3,16 @@ package xpath
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
 
-type context struct{}
+type context struct {
+	vars map[string]sequence
+}
 
 type item interface{}
 
@@ -36,48 +39,6 @@ func (s sequence) stringvalue() string {
 }
 
 type evalFunc func(context) (sequence, error)
-
-type adder func(item, item) (item, error)
-
-func add(left, right item) (item, error) {
-	var lvalue float64
-	var rvalue float64
-	if seq, ok := left.(sequence); ok {
-		if len(seq) > 1 {
-			return nil, ErrSequence
-		}
-		left = seq[0]
-	}
-
-	if seq, ok := right.(sequence); ok {
-		if len(seq) > 1 {
-			return nil, ErrSequence
-		}
-		right = seq[0]
-	}
-
-	switch l := left.(type) {
-	case int:
-		lvalue = float64(l)
-	case float64:
-		lvalue = l
-	default:
-		fmt.Printf("parse error lvalue %T\n", left)
-	}
-
-	switch r := right.(type) {
-	case int:
-		rvalue = float64(r)
-	case float64:
-		rvalue = r
-	default:
-		fmt.Printf("parse error rvalue %T\n", right)
-	}
-
-	a := lvalue + rvalue
-
-	return a, nil
-}
 
 func isEqual(a, b interface{}) (bool, error) {
 	return a == b, nil
@@ -164,6 +125,19 @@ func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 		return sequence{isCompare}, nil
 	}
 	return f, nil
+}
+
+func numberValue(s sequence) (float64, error) {
+	if len(s) == 0 {
+		return math.NaN(), nil
+	}
+	if len(s) > 1 {
+		return math.NaN(), fmt.Errorf("Required cardinality of first argument of fn:number() is zero or one; supplied value has cardinality more than one")
+	}
+	if flt, ok := s[0].(float64); ok {
+		return flt, nil
+	}
+	return math.NaN(), fmt.Errorf("not a number")
 }
 
 func booleanValue(s sequence) (bool, error) {
@@ -320,6 +294,7 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 		}
 	}
 	if len(efs) == 1 {
+		leaveStep(tl, "8 parseOrExpr")
 		return efs[0], nil
 	}
 	ef = func(ctx context) (sequence, error) {
@@ -376,6 +351,7 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 		}
 	}
 	if len(efs) == 1 {
+		leaveStep(tl, "9 parseAndExpr")
 		return efs[0], nil
 	}
 
@@ -412,6 +388,7 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 	}
 	peek, err := tl.peek()
 	if err == io.EOF {
+		leaveStep(tl, "10 parseComparisonExpr")
 		return lhs, nil
 	}
 	if err != nil {
@@ -424,6 +401,7 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 		if rhs, err = parseRangeExpr(tl); err != nil {
 			return nil, err
 		}
+		leaveStep(tl, "10 parseComparisonExpr")
 		return doCompare(peek.Value.(string), lhs, rhs)
 
 	}
@@ -447,12 +425,61 @@ func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 // [12] AdditiveExpr ::= MultiplicativeExpr ( ("+" | "-") MultiplicativeExpr )*
 func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "12 parseAdditiveExpr")
+	var efs []evalFunc
+	var operator []string
 	var ef evalFunc
-	ef, err := parseMultiplicativeExpr(tl)
-	if err != nil {
-		return nil, err
+	var err error
+	for {
+		ef, err = parseMultiplicativeExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, ef)
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if op, ok := peek.Value.(string); ok {
+			if op == "+" || op == "-" {
+				tl.read()
+				operator = append(operator, op)
+			} else {
+				break
+			}
+		} else {
+			break
+		}
 	}
-
+	if len(efs) == 1 {
+		leaveStep(tl, "12 parseAdditiveExpr")
+		return efs[0], nil
+	}
+	ef = func(ctx context) (sequence, error) {
+		s, err := efs[0](ctx)
+		if err != nil {
+			return nil, err
+		}
+		sum, err := numberValue(s)
+		if err != nil {
+			return nil, err
+		}
+		for i := 1; i < len(efs); i++ {
+			s, err := efs[i](ctx)
+			if err != nil {
+				return nil, err
+			}
+			flt, err := numberValue(s)
+			if operator[i-1] == "+" {
+				sum += flt
+			} else {
+				sum -= flt
+			}
+		}
+		return sequence{sum}, nil
+	}
 	leaveStep(tl, "12 parseAdditiveExpr")
 	return ef, nil
 }
@@ -460,10 +487,65 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 // [13] MultiplicativeExpr ::=  UnionExpr ( ("*" | "div" | "idiv" | "mod") UnionExpr )*
 func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "13 parseMultiplicativeExpr")
+
+	var efs []evalFunc
+	var operator []string
 	var ef evalFunc
-	ef, err := parseUnionExpr(tl)
-	if err != nil {
-		return nil, err
+	var err error
+	for {
+		ef, err = parseUnionExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, ef)
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if op, ok := peek.Value.(string); ok {
+			if op == "*" || op == "div" || op == "idiv" || op == "mod" {
+				tl.read()
+				operator = append(operator, op)
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	if len(efs) == 1 {
+		leaveStep(tl, "13 parseMultiplicativeExpr")
+		return efs[0], nil
+	}
+
+	ef = func(ctx context) (sequence, error) {
+		s, err := efs[0](ctx)
+		if err != nil {
+			return nil, err
+		}
+		sum, err := numberValue(s)
+		if err != nil {
+			return nil, err
+		}
+		for i := 1; i < len(efs); i++ {
+			s, err := efs[i](ctx)
+			if err != nil {
+				return nil, err
+			}
+			flt, err := numberValue(s)
+			switch operator[i-1] {
+			case "*":
+				sum *= flt
+			case "idiv", "div":
+				sum /= flt
+			case "mod":
+				sum = math.Mod(sum, flt)
+			}
+		}
+		return sequence{sum}, nil
 	}
 
 	leaveStep(tl, "13 parseMultiplicativeExpr")
@@ -472,7 +554,7 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 
 // [14] UnionExpr ::= IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*
 func parseUnionExpr(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, " parseUnionExpr")
+	enterStep(tl, "14 parseUnionExpr")
 	var ef evalFunc
 
 	ef, err := parseIntersectExceptExpr(tl)
@@ -480,7 +562,7 @@ func parseUnionExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
-	leaveStep(tl, " parseUnionExpr")
+	leaveStep(tl, "14 parseUnionExpr")
 	return ef, nil
 }
 
@@ -553,9 +635,47 @@ func parseCastExpr(tl *tokenlist) (evalFunc, error) {
 func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "20 parseUnaryExpr")
 	var ef evalFunc
-	ef, err := parseValueExpr(tl)
+	mult := 1
+	for {
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if val, ok := peek.Value.(string); ok {
+			if val == "+" || val == "-" {
+				tl.read()
+				if val == "-" {
+					mult *= -1
+				}
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	pv, err := parseValueExpr(tl)
 	if err != nil {
 		return nil, err
+	}
+
+	ef = func(ctx context) (sequence, error) {
+		if mult == -1 {
+			seq, err := pv(ctx)
+			if err != nil {
+				return nil, err
+			}
+			flt, err := numberValue(seq)
+			if err != nil {
+				return nil, err
+			}
+			return sequence{flt * -1}, nil
+		} else {
+			return pv(ctx)
+		}
 	}
 
 	leaveStep(tl, "20 parseUnaryExpr")
@@ -646,6 +766,17 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// VarRef
+	if nexttok.Typ == TokVarname {
+		ef = func(ctx context) (sequence, error) {
+			return ctx.vars[nexttok.Value.(string)], nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
+
+	// FunctionCall
 	peek, err := tl.peek()
 	if err != nil {
 		if err != io.EOF {
@@ -743,21 +874,7 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 
 // Dothings ..
 func Dothings() error {
-	// if false {
-
-	//  fn := "hello.xml"
-	//  r, err := os.Open(fn)
-	//  defer r.Close()
-	//  if err != nil {
-	//   return err
-	//  }
-	//  d, err := goxml.Parse(r)
-	//  if err != nil {
-	//   return err
-	//  }
-	//  fmt.Println("d", d.ToXML())
-	// }
-	tl, err := stringToTokenlist(` concat('abc','def') `)
+	tl, err := stringToTokenlist(` - 2 `)
 	if err != nil {
 		return err
 	}
@@ -767,7 +884,12 @@ func Dothings() error {
 		return err
 	}
 	fmt.Println("dynamic evaluation ------------")
-	seq, err := evaler(context{})
+	ctx := context{}
+	ctx.vars = make(map[string]sequence)
+	ctx.vars["foo"] = sequence{"bar"}
+	ctx.vars["onedotfive"] = sequence{1.5}
+
+	seq, err := evaler(ctx)
 	if err != nil {
 		return err
 	}

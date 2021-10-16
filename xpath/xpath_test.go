@@ -33,6 +33,7 @@ func TestEval(t *testing.T) {
 		{`if ( false() ) then 'a' else 'b'`, sequence{"b"}},
 		{`if ( true() ) then 'a' else 'b'`, sequence{"a"}},
 		{`true()`, sequence{true}},
+		{`2`, sequence{2.0}},
 		{`2 = 4`, sequence{false}},
 		{`2 = 2`, sequence{true}},
 		{`2 < 2`, sequence{false}},
@@ -60,6 +61,16 @@ func TestEval(t *testing.T) {
 		{`boolean(true())`, sequence{true}},
 		{`boolean('')`, sequence{false}},
 		{`boolean('false')`, sequence{true}},
+		{`3 + 4 - 2`, sequence{5.0}},
+		{`$foo`, sequence{"bar"}},
+		{`$onedotfive + 2 `, sequence{3.5}},
+		{`$onedotfive * 2 `, sequence{3.0}},
+		{`7 mod 3 `, sequence{1.0}},
+		{`9 * 4 div 6 `, sequence{6.0}},
+		{`7 div 2 `, sequence{3.5}},
+		{`-3 div 2 `, sequence{-1.5}},
+		{`7 div 2 = 3.5 `, sequence{true}},
+		{`8 mod 2 = 0 `, sequence{true}},
 
 		// assert_false(eval1(" boolean( (false()) )"))
 		// assert_true(eval1("  boolean( (true()) )"))
@@ -75,7 +86,11 @@ func TestEval(t *testing.T) {
 		if err != nil {
 			t.Errorf(err.Error())
 		}
-		seq, err := eval(context{})
+		ctx := context{}
+		ctx.vars = make(map[string]sequence)
+		ctx.vars["foo"] = sequence{"bar"}
+		ctx.vars["onedotfive"] = sequence{1.5}
+		seq, err := eval(ctx)
 		if err != nil {
 			t.Errorf(err.Error())
 		}
