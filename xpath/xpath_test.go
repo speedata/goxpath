@@ -36,6 +36,12 @@ func TestEval(t *testing.T) {
 		{`2 = 4`, sequence{false}},
 		{`2 = 2`, sequence{true}},
 		{`2 < 2`, sequence{false}},
+		{`2 < 3`, sequence{true}},
+		{`3.4 > 3.1`, sequence{true}},
+		{`3.4 != 3.1`, sequence{true}},
+		{`'abc' = 'abc'`, sequence{true}},
+		{`'aA' < 'aa'`, sequence{true}},
+		{`'aA' != 'aa'`, sequence{true}},
 	}
 	for _, td := range testdata {
 		tl, err := stringToTokenlist(td.input)

@@ -13,7 +13,7 @@ type context struct{}
 
 type item interface{}
 
-type compareFunc func(interface{}, interface{}) (bool, error)
+// type compareFunc func(interface{}, interface{}) (bool, error)
 
 type sequence []item
 
@@ -75,16 +75,62 @@ func isEqual(a, b interface{}) (bool, error) {
 	return a == b, nil
 }
 
-func isLess(a, b interface{}) (bool, error) {
+func isLessFloat(a, b float64) bool {
+	return a < b
+}
+
+func doCompareString(op string, a, b string) (bool, error) {
+	switch op {
+	case "<":
+		return a < b, nil
+	case "=":
+		return a == b, nil
+	case ">":
+		return a > b, nil
+	case ">=":
+		return a >= b, nil
+	case "<=":
+		return a <= b, nil
+	case "!=":
+		return a != b, nil
+	}
+	return false, fmt.Errorf("unknown operator %s", op)
+}
+
+func doCompareFloat(op string, a, b float64) (bool, error) {
+	switch op {
+	case "<":
+		return a < b, nil
+	case "=":
+		return a == b, nil
+	case ">":
+		return a > b, nil
+	case ">=":
+		return a >= b, nil
+	case "<=":
+		return a <= b, nil
+	case "!=":
+		return a != b, nil
+	}
+	return false, fmt.Errorf("unknown operator %s", op)
+}
+
+func compareFunc(op string, a, b interface{}) (bool, error) {
 	if left, ok := a.(float64); ok {
 		if right, ok := b.(float64); ok {
-			return left < right, nil
+			return doCompareFloat(op, left, right)
 		}
 	}
+	if left, ok := a.(string); ok {
+		if right, ok := b.(string); ok {
+			return doCompareString(op, left, right)
+		}
+	}
+
 	return false, fmt.Errorf("FORG0001")
 }
 
-func doCompare(cf compareFunc, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
+func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 	f := func(ctx context) (sequence, error) {
 		left, err := lhs(ctx)
 		if err != nil {
@@ -97,7 +143,7 @@ func doCompare(cf compareFunc, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 		var isCompare bool
 		for _, leftitem := range left {
 			for _, rightitem := range right {
-				ok, err := cf(leftitem, rightitem)
+				ok, err := compareFunc(op, leftitem, rightitem)
 				if err != nil {
 					return nil, err
 				}
@@ -278,17 +324,12 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	pv := peek.Value
-	if pv == "=" || pv == "<" {
+	if pv == "=" || pv == "<" || pv == ">" || pv == "<=" || pv == ">=" || pv == "!=" {
 		tl.read()
 		if rhs, err = parseRangeExpr(tl); err != nil {
 			return nil, err
 		}
-		switch peek.Value {
-		case "=":
-			return doCompare(isEqual, lhs, rhs)
-		case "<":
-			return doCompare(isLess, lhs, rhs)
-		}
+		return doCompare(peek.Value.(string), lhs, rhs)
 
 	}
 
