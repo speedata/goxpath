@@ -90,7 +90,7 @@ func callFunction(name string, arguments []sequence) (sequence, error) {
 	}
 	if max := fn.MaxArg; max > -1 {
 		if len(arguments) > max {
-			return nil, fmt.Errorf("too many arguments in function call (%q), max: %d", fn.Name, fn.MaxArg)
+			return nil, fmt.Errorf("too many arguments in function call (%q), max: %d, got %d (%#v)", fn.Name, fn.MaxArg, len(arguments), arguments)
 		}
 	}
 

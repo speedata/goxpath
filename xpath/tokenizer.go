@@ -110,6 +110,41 @@ type tokenlist struct {
 	toks tokens
 }
 
+func (tl *tokenlist) nexttokIsTyp(typ tokenType) bool {
+	tok, err := tl.peek()
+	if err != nil {
+		return false
+	}
+	return tok.Typ == typ
+}
+
+func (tl *tokenlist) nexttokIsValue(val string) bool {
+	tok, err := tl.peek()
+	if err != nil {
+		return false
+	}
+	if str, ok := tok.Value.(string); ok {
+		return str == val
+	}
+	return false
+}
+
+func (tl *tokenlist) readNexttokIfIsOneOfValue(val []string) (string, bool) {
+	tok, err := tl.peek()
+	if err != nil {
+		return "", false
+	}
+	if str, ok := tok.Value.(string); ok {
+		for _, v := range val {
+			if str == v {
+				tl.read()
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (tl *tokenlist) peek() (*token, error) {
 	if len(tl.toks) == tl.pos {
 		return nil, io.EOF

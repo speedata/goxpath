@@ -81,6 +81,8 @@ func TestEval(t *testing.T) {
 		{`( 1,2,(),3 ) `, sequence{1.0, 2.0, 3.0}},
 		{`() `, sequence{}},
 		{`( () ) `, sequence{}},
+		{`3 , 3`, sequence{3.0, 3.0}},
+		{`(3 , 3)`, sequence{3.0, 3.0}},
 
 		// assert_false(eval1(" boolean( (false()) )"))
 		// assert_true(eval1("  boolean( (true()) )"))

@@ -177,14 +177,7 @@ func parseExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if peek.Typ != TokComma {
+		if !tl.nexttokIsTyp(TokComma) {
 			break
 		}
 		tl.read() // comma
@@ -296,30 +289,18 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "8 parseOrExpr")
 	var ef evalFunc
 	var efs []evalFunc
-	ef, err := parseAndExpr(tl)
-	if err != nil {
-		return nil, err
-	}
-	efs = append(efs, ef)
 	for {
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
+		ef, err := parseAndExpr(tl)
 		if err != nil {
 			return nil, err
 		}
-		if peek.Value == "or" {
-			tl.read()
-			ef, err = parseAndExpr(tl)
-			if err != nil {
-				return nil, err
-			}
-			efs = append(efs, ef)
-		} else {
+		efs = append(efs, ef)
+		if !tl.nexttokIsValue("or") {
 			break
 		}
+		tl.read()
 	}
+
 	if len(efs) == 1 {
 		leaveStep(tl, "8 parseOrExpr")
 		return efs[0], nil
@@ -353,29 +334,16 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 
 	var ef evalFunc
 	var efs []evalFunc
-	ef, err := parseComparisonExpr(tl)
-	if err != nil {
-		return nil, err
-	}
-	efs = append(efs, ef)
 	for {
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
+		ef, err := parseComparisonExpr(tl)
 		if err != nil {
 			return nil, err
 		}
-		if peek.Value == "and" {
-			tl.read()
-			ef, err = parseComparisonExpr(tl)
-			if err != nil {
-				return nil, err
-			}
-			efs = append(efs, ef)
-		} else {
+		efs = append(efs, ef)
+		if !tl.nexttokIsValue("and") {
 			break
 		}
+		tl.read() // and
 	}
 	if len(efs) == 1 {
 		leaveStep(tl, "9 parseAndExpr")
@@ -413,23 +381,13 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 	if lhs, err = parseRangeExpr(tl); err != nil {
 		return nil, err
 	}
-	peek, err := tl.peek()
-	if err == io.EOF {
-		leaveStep(tl, "10 parseComparisonExpr")
-		return lhs, nil
-	}
-	if err != nil {
-		return nil, err
-	}
 
-	pv := peek.Value
-	if pv == "=" || pv == "<" || pv == ">" || pv == "<=" || pv == ">=" || pv == "!=" {
-		tl.read()
+	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"=", "<", ">", "<=", ">=", "!="}); ok {
 		if rhs, err = parseRangeExpr(tl); err != nil {
 			return nil, err
 		}
 		leaveStep(tl, "10 parseComparisonExpr")
-		return doCompare(peek.Value.(string), lhs, rhs)
+		return doCompare(op, lhs, rhs)
 
 	}
 
@@ -462,20 +420,8 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 			return nil, err
 		}
 		efs = append(efs, ef)
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if op, ok := peek.Value.(string); ok {
-			if op == "+" || op == "-" {
-				tl.read()
-				operator = append(operator, op)
-			} else {
-				break
-			}
+		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"+", "-"}); ok {
+			operator = append(operator, op)
 		} else {
 			break
 		}
@@ -525,20 +471,8 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 			return nil, err
 		}
 		efs = append(efs, ef)
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if op, ok := peek.Value.(string); ok {
-			if op == "*" || op == "div" || op == "idiv" || op == "mod" {
-				tl.read()
-				operator = append(operator, op)
-			} else {
-				break
-			}
+		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"*", "div", "idiv", "mod"}); ok {
+			operator = append(operator, op)
 		} else {
 			break
 		}
@@ -664,21 +598,9 @@ func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	mult := 1
 	for {
-		peek, err := tl.peek()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if val, ok := peek.Value.(string); ok {
-			if val == "+" || val == "-" {
-				tl.read()
-				if val == "-" {
-					mult *= -1
-				}
-			} else {
-				break
+		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"+", "-"}); ok {
+			if op == "-" {
+				mult *= -1
 			}
 		} else {
 			break
@@ -700,9 +622,8 @@ func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 				return nil, err
 			}
 			return sequence{flt * -1}, nil
-		} else {
-			return pv(ctx)
 		}
+		return pv(ctx)
 	}
 
 	leaveStep(tl, "20 parseUnaryExpr")
@@ -778,6 +699,9 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
+	if tl.nexttokIsTyp(TokOpenBracket) {
+		fmt.Println("predicate list follows")
+	}
 	leaveStep(tl, "38 parseFilterExpr")
 	return ef, nil
 }
@@ -832,21 +756,8 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// FunctionCall
-	peek, err := tl.peek()
-	if err == io.EOF {
-		tl.unread()
-		ef = func(ctx context) (sequence, error) {
-			return sequence{}, nil
-		}
-
-		leaveStep(tl, "41 parsePrimaryExpr")
-		return ef, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if peek.Typ == TokOpenParen {
-		tl.unread()
+	if tl.nexttokIsTyp(TokOpenParen) {
+		tl.unread() // function name
 		ef, err := parseFunctionCall(tl)
 		if err != nil {
 			return nil, err
@@ -904,52 +815,45 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		return nil, fmt.Errorf("function %q not defined", functionName)
 	}
 
-	peek, err := tl.peek()
-	if err != nil {
-		return nil, err
-	}
-
-	if peek.Typ == TokCloseParen {
-		// shortcut, no arguments:
+	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
 		ef = func(ctx context) (sequence, error) {
 			return callFunction(functionName, []sequence{})
 		}
-	} else {
-		var efs []evalFunc
+		leaveStep(tl, "48 parseFunctionCall")
 
-		for {
-			es, err := parseExprSingle(tl)
+		return ef, nil
+	}
+
+	var efs []evalFunc
+
+	for {
+		es, err := parseExprSingle(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, es)
+		if !tl.nexttokIsTyp(TokComma) {
+			break
+		}
+		tl.read()
+	}
+
+	if err = tl.skipType(TokCloseParen); err != nil {
+		return nil, fmt.Errorf("close paren expected")
+	}
+	// get expr single *
+	ef = func(ctx context) (sequence, error) {
+		var arguments []sequence
+		for _, es := range efs {
+			seq, err := es(ctx)
 			if err != nil {
 				return nil, err
 			}
-			efs = append(efs, es)
-			peek, err := tl.peek()
-			if err != nil {
-				return nil, err
-			}
-			if peek.Typ == TokCloseParen {
-				break
-			}
-			if !(peek.Typ == TokComma) {
-				return nil, fmt.Errorf("comma expected, found %v", peek)
-			}
-			tl.read()
-		}
-		// get expr single *
-		ef = func(ctx context) (sequence, error) {
-			var arguments []sequence
-			for _, es := range efs {
-				seq, err := es(ctx)
-				if err != nil {
-					return nil, err
-				}
-				arguments = append(arguments, seq)
-			}
-
-			return callFunction(functionName, arguments)
+			arguments = append(arguments, seq)
 		}
 
+		return callFunction(functionName, arguments)
 	}
 
 	leaveStep(tl, "48 parseFunctionCall")
@@ -966,7 +870,7 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 
 // Dothings ..
 func Dothings() error {
-	tl, err := stringToTokenlist(` () `)
+	tl, err := stringToTokenlist(` false() `)
 	if err != nil {
 		return err
 	}
