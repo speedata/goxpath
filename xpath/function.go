@@ -36,6 +36,11 @@ func fnNot(args []sequence) (sequence, error) {
 	return sequence{!b}, nil
 }
 
+func fnNumber(args []sequence) (sequence, error) {
+	bv, err := numberValue(args[0])
+	return sequence{bv}, err
+}
+
 func fnTrue(args []sequence) (sequence, error) {
 	return sequence{true}, nil
 }
@@ -44,6 +49,7 @@ func init() {
 	xpathfunctions = make(map[string]*Function)
 
 	RegisterFunction(&Function{Name: "boolean", Namespace: fnNS, F: fnBoolean, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})

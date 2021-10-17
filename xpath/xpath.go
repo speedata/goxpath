@@ -24,9 +24,9 @@ func (s sequence) String() string {
 	var sb strings.Builder
 	sb.WriteString(`( `)
 	for _, itm := range s {
-		fmt.Fprintf(&sb, "%v", itm)
+		fmt.Fprintf(&sb, "%v ", itm)
 	}
-	sb.WriteString(` )`)
+	sb.WriteString(`)`)
 	return sb.String()
 }
 
@@ -134,10 +134,11 @@ func numberValue(s sequence) (float64, error) {
 	if len(s) > 1 {
 		return math.NaN(), fmt.Errorf("Required cardinality of first argument of fn:number() is zero or one; supplied value has cardinality more than one")
 	}
+
 	if flt, ok := s[0].(float64); ok {
 		return flt, nil
 	}
-	return math.NaN(), fmt.Errorf("not a number")
+	return math.NaN(), nil
 }
 
 func booleanValue(s sequence) (bool, error) {
@@ -166,19 +167,45 @@ func booleanValue(s sequence) (bool, error) {
 //  [2] Expr ::= ExprSingle ("," ExprSingle)*
 func parseExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "2 parseExpr")
-	ef, err := parseExprSingle(tl)
-	if err != nil {
-		return nil, err
-	}
-	// Todo: more than one item
-
-	f := func(ctx context) (sequence, error) {
-		seq, err := ef(ctx)
+	var efs []evalFunc
+	for {
+		ef, err := parseExprSingle(tl)
+		efs = append(efs, ef)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return nil, err
 		}
+		peek, err := tl.peek()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if peek.Typ != TokComma {
+			break
+		}
+		tl.read() // comma
+	}
+	if len(efs) == 1 {
+		leaveStep(tl, "2 parseExpr (one ExprSingle)")
+		return efs[0], nil
+	}
+	// more than one ExprSingle
 
-		return seq, nil
+	f := func(ctx context) (sequence, error) {
+		var ret sequence
+		for _, ef := range efs {
+			seq, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ret = append(ret, seq...)
+		}
+
+		return ret, nil
 	}
 	leaveStep(tl, "2 parseExpr")
 	return f, nil
@@ -767,6 +794,34 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
+	// StringLiteral
+	if nexttok.Typ == TokString {
+		ef = func(ctx context) (sequence, error) {
+			return sequence{nexttok.Value.(string)}, nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
+
+	// NumericLiteral
+	if nexttok.Typ == TokNumber {
+		ef = func(ctx context) (sequence, error) {
+			return sequence{nexttok.Value.(float64)}, nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
+
+	// ParenthesizedExpr
+	if nexttok.Typ == TokOpenParen {
+		ef, err = parseParenthesizedExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
+
 	// VarRef
 	if nexttok.Typ == TokVarname {
 		ef = func(ctx context) (sequence, error) {
@@ -778,20 +833,57 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 
 	// FunctionCall
 	peek, err := tl.peek()
+	if err == io.EOF {
+		tl.unread()
+		ef = func(ctx context) (sequence, error) {
+			return sequence{}, nil
+		}
+
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
 	if err != nil {
-		if err != io.EOF {
+		return nil, err
+	}
+	if peek.Typ == TokOpenParen {
+		tl.unread()
+		ef, err := parseFunctionCall(tl)
+		if err != nil {
 			return nil, err
 		}
-	} else {
-		if peek.Typ == TokOpenParen {
-			tl.unread()
-			return parseFunctionCall(tl)
-		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
 	}
+	tl.unread()
 	ef = func(ctx context) (sequence, error) {
-		return sequence{nexttok.Value}, nil
+		return sequence{}, nil
 	}
 	leaveStep(tl, "41 parsePrimaryExpr")
+	return ef, nil
+}
+
+// [46] ParenthesizedExpr ::= "(" Expr? ")"
+func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "46 parseParenthesizedExpr")
+	var exp, ef evalFunc
+	var err error
+	exp, err = parseExpr(tl)
+	if err != nil {
+		return nil, err
+	}
+	if err = tl.skipType(TokCloseParen); err != nil {
+		return nil, err
+	}
+
+	ef = func(ctx context) (sequence, error) {
+		seq, err := exp(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return seq, nil
+	}
+
+	leaveStep(tl, "46 parseParenthesizedExpr")
 	return ef, nil
 }
 
@@ -818,7 +910,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	}
 
 	if peek.Typ == TokCloseParen {
-		// shortcut, func()
+		// shortcut, no arguments:
 		tl.read()
 		ef = func(ctx context) (sequence, error) {
 			return callFunction(functionName, []sequence{})
@@ -874,7 +966,7 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 
 // Dothings ..
 func Dothings() error {
-	tl, err := stringToTokenlist(` - 2 `)
+	tl, err := stringToTokenlist(` () `)
 	if err != nil {
 		return err
 	}
@@ -895,6 +987,6 @@ func Dothings() error {
 	}
 	fmt.Println("result -----------------")
 	fmt.Printf("len(seq) %#v\n", len(seq))
-	fmt.Printf("seq[0] %#v\n", seq[0])
+	fmt.Printf("seq %s\n", seq)
 	return nil
 }

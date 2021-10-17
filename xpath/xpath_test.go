@@ -34,6 +34,8 @@ func TestEval(t *testing.T) {
 		{`if ( true() ) then 'a' else 'b'`, sequence{"a"}},
 		{`true()`, sequence{true}},
 		{`2`, sequence{2.0}},
+		{` +-+-+2`, sequence{2.0}},
+		{` +-+-+-+ 2`, sequence{-2.0}},
 		{`2 = 4`, sequence{false}},
 		{`2 = 2`, sequence{true}},
 		{`2 < 2`, sequence{false}},
@@ -61,6 +63,7 @@ func TestEval(t *testing.T) {
 		{`boolean(true())`, sequence{true}},
 		{`boolean('')`, sequence{false}},
 		{`boolean('false')`, sequence{true}},
+		// {`number('zzz')`, sequence{math.NaN()}},
 		{`3 + 4 - 2`, sequence{5.0}},
 		{`$foo`, sequence{"bar"}},
 		{`$onedotfive + 2 `, sequence{3.5}},
@@ -71,6 +74,13 @@ func TestEval(t *testing.T) {
 		{`-3 div 2 `, sequence{-1.5}},
 		{`7 div 2 = 3.5 `, sequence{true}},
 		{`8 mod 2 = 0 `, sequence{true}},
+		{`(1,2) `, sequence{1.0, 2.0}},
+		{`(1,2) = (2,3) `, sequence{true}},
+		{`(1,2) != (2,3) `, sequence{true}},
+		{`(1,2) != (1,2) `, sequence{true}},
+		{`( 1,2,(),3 ) `, sequence{1.0, 2.0, 3.0}},
+		{`() `, sequence{}},
+		{`( () ) `, sequence{}},
 
 		// assert_false(eval1(" boolean( (false()) )"))
 		// assert_true(eval1("  boolean( (true()) )"))
@@ -86,10 +96,16 @@ func TestEval(t *testing.T) {
 		if err != nil {
 			t.Errorf(err.Error())
 		}
-		ctx := context{}
-		ctx.vars = make(map[string]sequence)
-		ctx.vars["foo"] = sequence{"bar"}
-		ctx.vars["onedotfive"] = sequence{1.5}
+		ctx := context{
+			vars: map[string]sequence{
+				"foo":        {"bar"},
+				"onedotfive": {1.5},
+				"a":          {5.0},
+				"two":        {2.0},
+				"one":        {1.0},
+				"one-two":    {12.0},
+			},
+		}
 		seq, err := eval(ctx)
 		if err != nil {
 			t.Errorf(err.Error())
