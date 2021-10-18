@@ -11,7 +11,50 @@ import (
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
 
 type context struct {
-	vars map[string]sequence
+	vars    map[string]sequence
+	tmpvars map[string]sequence
+	context sequence
+	current sequence
+}
+
+func (ctx *context) Filter(filter evalFunc) (sequence, error) {
+	var result sequence
+	var predicateIsNum bool
+	var predicateNum int
+
+	predicate, err := filter(*ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(predicate) == 1 {
+		if p0, ok := predicate[0].(float64); ok {
+			predicateIsNum = true
+			predicateNum = int(p0)
+		}
+	}
+	if predicateIsNum {
+		if predicateNum > len(ctx.context) {
+			return sequence{}, nil
+		}
+		return sequence{ctx.context[predicateNum-1]}, nil
+	}
+	copyContext := ctx.context
+	for _, itm := range copyContext {
+		ctx.context = sequence{itm}
+		predicate, err := filter(*ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		evalItem, err := booleanValue(predicate)
+		if err != nil {
+			return nil, err
+		}
+		if evalItem {
+			result = append(result, itm)
+		}
+	}
+	return result, nil
 }
 
 type item interface{}
@@ -207,32 +250,85 @@ func parseExpr(tl *tokenlist) (evalFunc, error) {
 // [3] ExprSingle ::= ForExpr | QuantifiedExpr | IfExpr | OrExpr
 func parseExprSingle(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "3 parseExprSingle")
-	nexttok, err := tl.read()
-	if err != nil {
-		return nil, err
-	}
 	var ef evalFunc
-
-	if val, ok := nexttok.Value.(string); ok && val == "for" || val == "some" || val == "if" {
-		switch val {
+	var err error
+	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"for", "some", "if"}); ok {
+		switch op {
 		case "for":
-			// ef = parseForExpr(tl)
+			ef, err = parseForExpr(tl)
 		case "some":
+			return nil, fmt.Errorf("not implemented yet: some")
 			// ef = parseQuantifiedExpr(tl)
 		case "if":
+			leaveStep(tl, "3 parseExprSingle")
 			ef, err = parseIfExpr(tl)
 		}
-	} else {
-		tl.unread()
-		ef, err = parseOrExpr(tl)
-	}
-	if err != nil {
-		return nil, err
+		return ef, err
 	}
 
+	ef, err = parseOrExpr(tl)
 	leaveStep(tl, "3 parseExprSingle")
 	return ef, nil
 }
+
+// [4] ForExpr ::= SimpleForClause "return" ExprSingle
+func parseForExpr(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "4 parseForExpr")
+	var ef evalFunc
+	var err error
+	if ef, err = parseSimpleForClause(tl); err != nil {
+		return nil, err
+	}
+	err = tl.skipNCName("return")
+	if err != nil {
+		return nil, err
+	}
+	evalseq, err := parseExprSingle(tl)
+	ret := func(ctx context) (sequence, error) {
+		_, err = ef(ctx)
+		if err != nil {
+			return nil, err
+		}
+		seq, err := evalseq(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return seq, nil
+	}
+	leaveStep(tl, "4 parseForExpr")
+	return ret, nil
+}
+
+// [5] SimpleForClause ::= "for" "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)*
+func parseSimpleForClause(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "5 parseSimpleForClause")
+	var ef evalFunc
+	vartoken, err := tl.read()
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("var %#v\n", vartoken)
+	if err = tl.skipNCName("in"); err != nil {
+		return nil, err
+	}
+	if ef, err = parseExprSingle(tl); err != nil {
+		return nil, err
+	}
+	ret := func(ctx context) (sequence, error) {
+		seq, err := ef(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ctx.tmpvars[vartoken.Value.(string)] = seq
+
+		return nil, nil
+	}
+
+	leaveStep(tl, "5 parseSimpleForClause")
+	return ret, nil
+}
+
+// [6] QuantifiedExpr ::= ("some" | "every") "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)* "satisfies" ExprSingle
 
 // [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 func parseIfExpr(tl *tokenlist) (evalFunc, error) {
@@ -691,7 +787,9 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 // [35] NodeTest ::= KindTest | NameTest
 // [36] NameTest ::= QName | Wildcard
 // [37] Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
+
 // [38] FilterExpr ::= PrimaryExpr PredicateList
+// [39] PredicateList ::= Predicate*
 func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "38 parseFilterExpr")
 	var ef evalFunc
@@ -699,14 +797,34 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tl.nexttokIsTyp(TokOpenBracket) {
-		fmt.Println("predicate list follows")
+	for {
+		if tl.nexttokIsTyp(TokOpenBracket) {
+			tl.read()
+			predicate, err := parseExpr(tl)
+			if err != nil {
+				return nil, err
+			}
+			err = tl.skipType(TokCloseBracket)
+			if err != nil {
+				return nil, err
+			}
+
+			ff := func(ctx context) (sequence, error) {
+				ctx.context, err = ef(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return ctx.Filter(predicate)
+			}
+			return ff, nil
+		}
+		break
+
 	}
 	leaveStep(tl, "38 parseFilterExpr")
 	return ef, nil
 }
 
-// [39] PredicateList ::= Predicate*
 // [40] Predicate ::= "[" Expr "]"
 // [41] PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall
 func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
@@ -870,7 +988,7 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 
 // Dothings ..
 func Dothings() error {
-	tl, err := stringToTokenlist(` false() `)
+	tl, err := stringToTokenlist(` for $foo in (1,2,3) return $foo `)
 	if err != nil {
 		return err
 	}
@@ -882,6 +1000,7 @@ func Dothings() error {
 	fmt.Println("dynamic evaluation ------------")
 	ctx := context{}
 	ctx.vars = make(map[string]sequence)
+	ctx.tmpvars = make(map[string]sequence)
 	ctx.vars["foo"] = sequence{"bar"}
 	ctx.vars["onedotfive"] = sequence{1.5}
 
