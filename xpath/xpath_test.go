@@ -111,7 +111,7 @@ func TestEval(t *testing.T) {
 				"one-two":    {12.0},
 			},
 		}
-		seq, err := eval(ctx)
+		seq, err := eval(&ctx)
 		if err != nil {
 			t.Errorf(err.Error())
 		}

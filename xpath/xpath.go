@@ -22,7 +22,7 @@ func (ctx *context) Filter(filter evalFunc) (sequence, error) {
 	var predicateIsNum bool
 	var predicateNum int
 
-	predicate, err := filter(*ctx)
+	predicate, err := filter(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (ctx *context) Filter(filter evalFunc) (sequence, error) {
 	copyContext := ctx.context
 	for _, itm := range copyContext {
 		ctx.context = sequence{itm}
-		predicate, err := filter(*ctx)
+		predicate, err := filter(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func (s sequence) stringvalue() string {
 	return sb.String()
 }
 
-type evalFunc func(context) (sequence, error)
+type evalFunc func(*context) (sequence, error)
 
 func isEqual(a, b interface{}) (bool, error) {
 	return a == b, nil
@@ -143,7 +143,7 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 }
 
 func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
-	f := func(ctx context) (sequence, error) {
+	f := func(ctx *context) (sequence, error) {
 		left, err := lhs(ctx)
 		if err != nil {
 			return nil, err
@@ -231,7 +231,7 @@ func parseExpr(tl *tokenlist) (evalFunc, error) {
 	}
 	// more than one ExprSingle
 
-	f := func(ctx context) (sequence, error) {
+	f := func(ctx *context) (sequence, error) {
 		var ret sequence
 		for _, ef := range efs {
 			seq, err := ef(ctx)
@@ -284,7 +284,7 @@ func parseForExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 	evalseq, err := parseExprSingle(tl)
-	ret := func(ctx context) (sequence, error) {
+	ret := func(ctx *context) (sequence, error) {
 		_, err = ef(ctx)
 		if err != nil {
 			return nil, err
@@ -314,7 +314,7 @@ func parseSimpleForClause(tl *tokenlist) (evalFunc, error) {
 	if ef, err = parseExprSingle(tl); err != nil {
 		return nil, err
 	}
-	ret := func(ctx context) (sequence, error) {
+	ret := func(ctx *context) (sequence, error) {
 		seq, err := ef(ctx)
 		if err != nil {
 			return nil, err
@@ -362,7 +362,7 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
-	f := func(ctx context) (sequence, error) {
+	f := func(ctx *context) (sequence, error) {
 		res, err := boolEval(ctx)
 		if err != nil {
 			return nil, err
@@ -401,7 +401,7 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 		leaveStep(tl, "8 parseOrExpr")
 		return efs[0], nil
 	}
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		for _, ef := range efs {
 			s, err := ef(ctx)
 			if err != nil {
@@ -446,7 +446,7 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 		return efs[0], nil
 	}
 
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		for _, ef := range efs {
 			s, err := ef(ctx)
 			if err != nil {
@@ -526,7 +526,7 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 		leaveStep(tl, "12 parseAdditiveExpr")
 		return efs[0], nil
 	}
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		s, err := efs[0](ctx)
 		if err != nil {
 			return nil, err
@@ -578,7 +578,7 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 		return efs[0], nil
 	}
 
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		s, err := efs[0](ctx)
 		if err != nil {
 			return nil, err
@@ -707,7 +707,7 @@ func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		if mult == -1 {
 			seq, err := pv(ctx)
 			if err != nil {
@@ -809,7 +809,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 				return nil, err
 			}
 
-			ff := func(ctx context) (sequence, error) {
+			ff := func(ctx *context) (sequence, error) {
 				ctx.context, err = ef(ctx)
 				if err != nil {
 					return nil, err
@@ -838,7 +838,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 
 	// StringLiteral
 	if nexttok.Typ == TokString {
-		ef = func(ctx context) (sequence, error) {
+		ef = func(ctx *context) (sequence, error) {
 			return sequence{nexttok.Value.(string)}, nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
@@ -847,7 +847,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 
 	// NumericLiteral
 	if nexttok.Typ == TokNumber {
-		ef = func(ctx context) (sequence, error) {
+		ef = func(ctx *context) (sequence, error) {
 			return sequence{nexttok.Value.(float64)}, nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
@@ -866,7 +866,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 
 	// VarRef
 	if nexttok.Typ == TokVarname {
-		ef = func(ctx context) (sequence, error) {
+		ef = func(ctx *context) (sequence, error) {
 			return ctx.vars[nexttok.Value.(string)], nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
@@ -884,7 +884,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		return ef, nil
 	}
 	tl.unread()
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		return sequence{}, nil
 	}
 	leaveStep(tl, "41 parsePrimaryExpr")
@@ -904,7 +904,7 @@ func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		seq, err := exp(ctx)
 		if err != nil {
 			return nil, err
@@ -935,7 +935,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 
 	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
-		ef = func(ctx context) (sequence, error) {
+		ef = func(ctx *context) (sequence, error) {
 			return callFunction(functionName, []sequence{})
 		}
 		leaveStep(tl, "48 parseFunctionCall")
@@ -961,7 +961,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		return nil, fmt.Errorf("close paren expected")
 	}
 	// get expr single *
-	ef = func(ctx context) (sequence, error) {
+	ef = func(ctx *context) (sequence, error) {
 		var arguments []sequence
 		for _, es := range efs {
 			seq, err := es(ctx)
@@ -1004,7 +1004,7 @@ func Dothings() error {
 	ctx.vars["foo"] = sequence{"bar"}
 	ctx.vars["onedotfive"] = sequence{1.5}
 
-	seq, err := evaler(ctx)
+	seq, err := evaler(&ctx)
 	if err != nil {
 		return err
 	}
