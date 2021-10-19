@@ -495,12 +495,49 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "11 parseRangeExpr")
 	var ef evalFunc
-	ef, err := parseAdditiveExpr(tl)
-	if err != nil {
-		return nil, err
+	var efs []evalFunc
+	var err error
+	for {
+		ef, err = parseAdditiveExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, ef)
+		if _, ok := tl.readNexttokIfIsOneOfValue([]string{"to"}); ok {
+			// good, just add the next func to the efs slice
+		} else {
+			break
+		}
+	}
+	if len(efs) == 1 {
+		leaveStep(tl, "11 parseRangeExpr")
+		return efs[0], nil
+	}
+	retf := func(ctx *context) (sequence, error) {
+		lhs, err := efs[0](ctx)
+		if err != nil {
+			return nil, err
+		}
+		rhs, err := efs[1](ctx)
+		if err != nil {
+			return nil, err
+		}
+		lhsNum, err := numberValue(lhs)
+		if err != nil {
+			return nil, err
+		}
+		rhsNum, err := numberValue(rhs)
+		if err != nil {
+			return nil, err
+		}
+		var seq sequence
+		for i := lhsNum; i <= rhsNum; i++ {
+			seq = append(seq, i)
+		}
+		return seq, nil
 	}
 	leaveStep(tl, "11 parseRangeExpr")
-	return ef, nil
+	return retf, nil
 }
 
 // [12] AdditiveExpr ::= MultiplicativeExpr ( ("+" | "-") MultiplicativeExpr )*

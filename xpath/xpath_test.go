@@ -34,6 +34,7 @@ func TestEval(t *testing.T) {
 		{`if ( true() ) then 'a' else 'b'`, sequence{"a"}},
 		{`true()`, sequence{true}},
 		{`2`, sequence{2.0}},
+		{`1 to 3`, sequence{1.0, 2.0, 3.0}},
 		{` +-+-+2`, sequence{2.0}},
 		{` +-+-+-+ 2`, sequence{-2.0}},
 		{`2 = 4`, sequence{false}},
