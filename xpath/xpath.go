@@ -272,59 +272,56 @@ func parseExprSingle(tl *tokenlist) (evalFunc, error) {
 }
 
 // [4] ForExpr ::= SimpleForClause "return" ExprSingle
+// [5] SimpleForClause ::= "for" "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)*
 func parseForExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "4 parseForExpr")
-	var ef evalFunc
+	var simpleForClauseF evalFunc
 	var err error
-	if ef, err = parseSimpleForClause(tl); err != nil {
-		return nil, err
-	}
-	err = tl.skipNCName("return")
-	if err != nil {
-		return nil, err
-	}
-	evalseq, err := parseExprSingle(tl)
-	ret := func(ctx *context) (sequence, error) {
-		_, err = ef(ctx)
-		if err != nil {
-			return nil, err
-		}
-		seq, err := evalseq(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return seq, nil
-	}
-	leaveStep(tl, "4 parseForExpr")
-	return ret, nil
-}
-
-// [5] SimpleForClause ::= "for" "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)*
-func parseSimpleForClause(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, "5 parseSimpleForClause")
-	var ef evalFunc
+	var varname string
+	// simple for clause:
 	vartoken, err := tl.read()
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("var %#v\n", vartoken)
+	if vn, ok := vartoken.Value.(string); ok {
+		varname = vn
+	} else {
+		return nil, fmt.Errorf("variable name not a string")
+	}
+
 	if err = tl.skipNCName("in"); err != nil {
 		return nil, err
 	}
-	if ef, err = parseExprSingle(tl); err != nil {
+	if simpleForClauseF, err = parseExprSingle(tl); err != nil {
 		return nil, err
 	}
+
+	err = tl.skipNCName("return")
+	if err != nil {
+		return nil, err
+	}
+
+	evalseq, err := parseExprSingle(tl)
 	ret := func(ctx *context) (sequence, error) {
-		seq, err := ef(ctx)
+		var SimpleForClauseSeq sequence
+		var retSeq sequence
+
+		SimpleForClauseSeq, err = simpleForClauseF(ctx)
 		if err != nil {
 			return nil, err
 		}
-		ctx.tmpvars[vartoken.Value.(string)] = seq
-
-		return nil, nil
+		for _, itm := range SimpleForClauseSeq {
+			// TODO: save variable value and restore afterwards
+			ctx.vars[varname] = sequence{itm}
+			seq, err := evalseq(ctx)
+			if err != nil {
+				return nil, err
+			}
+			retSeq = append(retSeq, seq...)
+		}
+		return retSeq, nil
 	}
-
-	leaveStep(tl, "5 parseSimpleForClause")
+	leaveStep(tl, "4 parseForExpr")
 	return ret, nil
 }
 
@@ -478,13 +475,12 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 
-	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"=", "<", ">", "<=", ">=", "!="}); ok {
+	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"=", "<", ">", "<=", ">=", "!=", "eq", "ne", "lt", "le", "gt", "ge", "is", "<<", ">>"}); ok {
 		if rhs, err = parseRangeExpr(tl); err != nil {
 			return nil, err
 		}
 		leaveStep(tl, "10 parseComparisonExpr")
 		return doCompare(op, lhs, rhs)
-
 	}
 
 	leaveStep(tl, "10 parseComparisonExpr")
@@ -633,8 +629,10 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 			switch operator[i-1] {
 			case "*":
 				sum *= flt
-			case "idiv", "div":
+			case "div":
 				sum /= flt
+			case "idiv":
+				sum = float64(int(sum / flt))
 			case "mod":
 				sum = math.Mod(sum, flt)
 			}
@@ -973,7 +971,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
 		ef = func(ctx *context) (sequence, error) {
-			return callFunction(functionName, []sequence{})
+			return callFunction(functionName, sequence{})
 		}
 		leaveStep(tl, "48 parseFunctionCall")
 
@@ -999,13 +997,13 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	}
 	// get expr single *
 	ef = func(ctx *context) (sequence, error) {
-		var arguments []sequence
+		var arguments sequence
 		for _, es := range efs {
 			seq, err := es(ctx)
 			if err != nil {
 				return nil, err
 			}
-			arguments = append(arguments, seq)
+			arguments = append(arguments, seq...)
 		}
 
 		return callFunction(functionName, arguments)

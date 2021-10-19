@@ -80,7 +80,7 @@ func hasFunction(name string) bool {
 	return ok
 }
 
-func callFunction(name string, arguments []sequence) (sequence, error) {
+func callFunction(name string, arguments sequence) (sequence, error) {
 	fn := getfunction(name)
 
 	if min := fn.MinArg; min > 0 {
@@ -93,6 +93,9 @@ func callFunction(name string, arguments []sequence) (sequence, error) {
 			return nil, fmt.Errorf("too many arguments in function call (%q), max: %d, got %d (%#v)", fn.Name, fn.MaxArg, len(arguments), arguments)
 		}
 	}
-
-	return fn.F(arguments)
+	var args []sequence
+	for _, arg := range arguments {
+		args = append(args, sequence{arg})
+	}
+	return fn.F(args)
 }
