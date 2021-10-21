@@ -15,9 +15,56 @@ var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed 
 // Context is needed for variables and XML navigation.
 type Context struct {
 	vars    map[string]Sequence
-	nn      *NodeNavigator
 	context Sequence
-	current Sequence
+	xmldoc  *goxml.XMLDocument
+}
+
+// NewContext returns a context from the xml document
+func NewContext(doc *goxml.XMLDocument) *Context {
+	ctx := &Context{
+		xmldoc: doc,
+		vars:   make(map[string]Sequence),
+	}
+
+	return ctx
+}
+
+// Document moves the node navigator to the document and retuns it
+func (ctx *Context) Document() goxml.XMLNode {
+	ctx.context = Sequence{ctx.xmldoc}
+	return ctx.xmldoc
+}
+
+// Root moves the node navigator to the root node of the document
+func (ctx *Context) Root() (Sequence, error) {
+	var err error
+	cur, err := ctx.xmldoc.Root()
+	if err != nil {
+		return nil, err
+	}
+	ctx.context = Sequence{cur}
+	return ctx.context, err
+}
+
+type testfuncChildren func(*goxml.Element) bool
+type testfuncAttributes func(goxml.XMLNode) bool
+
+// Child returns all children of the current node that satisfy the testfunc
+func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
+	var seq Sequence
+	for _, n := range ctx.context {
+		if node, ok := n.(goxml.XMLNode); ok {
+			for _, c := range node.Children() {
+				if celt, ok := c.(*goxml.Element); ok {
+					if tf(celt) {
+						seq = append(seq, celt)
+					}
+				}
+			}
+		}
+	}
+	ctx.context = seq
+	return seq, nil
 }
 
 // Filter applies prediates to the context
@@ -59,6 +106,16 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		}
 	}
 	return result, nil
+}
+
+func returnIsNameTF(name string) testfuncChildren {
+	tf := func(elt *goxml.Element) bool {
+		if elt.Name == name {
+			return true
+		}
+		return false
+	}
+	return tf
 }
 
 // An Item can hold anything such as a number, a string or a node.
@@ -797,7 +854,7 @@ func parsePathExpr(tl *tokenlist) (evalFunc, error) {
 		switch op {
 		case "/":
 			fn := func(ctx *Context) (Sequence, error) {
-				ctx.nn.Document()
+				ctx.Document()
 				seq, err := rpe(ctx)
 				if err != nil {
 					return nil, err
@@ -842,7 +899,7 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 	ef = func(ctx *Context) (Sequence, error) {
 		var seq Sequence
 		for i := 0; i < len(efs); i++ {
-			fmt.Printf("i %#v\n", i)
+
 			if seq, err = efs[i](ctx); err != nil {
 				return nil, err
 			}
@@ -874,11 +931,9 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 
 	if ef == nil {
 		ef = func(ctx *Context) (Sequence, error) {
-			fmt.Println("return empty sequence")
 			return Sequence{}, nil
 		}
 	}
-	fmt.Println("found axis step")
 	leaveStep(tl, "27 parseStepExpr")
 	return ef, nil
 }
@@ -931,7 +986,6 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "36 parseNameTest")
 	var ef evalFunc
 
-	fmt.Println("parse name test")
 	if tl.nexttokIsTyp(TokQName) {
 		n, err := tl.read()
 		if err != nil {
@@ -939,8 +993,7 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 		}
 
 		ef = func(ctx *Context) (Sequence, error) {
-			fmt.Printf("call nn.Child for %s\n", n.Value)
-			ctx.nn.Child(returnIsNameTF(n.Value.(string)), ctx)
+			ctx.Child(returnIsNameTF(n.Value.(string)))
 			return ctx.context, nil
 		}
 	} else {
@@ -1097,7 +1150,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
 		ef = func(ctx *Context) (Sequence, error) {
-			return callFunction(functionName, Sequence{})
+			return callFunction(functionName, []Sequence{})
 		}
 		leaveStep(tl, "48 parseFunctionCall")
 
@@ -1123,15 +1176,14 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	}
 	// get expr single *
 	ef = func(ctx *Context) (Sequence, error) {
-		var arguments Sequence
+		var arguments []Sequence
 		for _, es := range efs {
 			seq, err := es(ctx)
 			if err != nil {
 				return nil, err
 			}
-			arguments = append(arguments, seq...)
+			arguments = append(arguments, seq)
 		}
-
 		return callFunction(functionName, arguments)
 	}
 
@@ -1176,14 +1228,12 @@ func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
 // NewParser returns a context to be filled
 func NewParser(r io.Reader) (*Parser, error) {
 	xp := &Parser{}
-	xp.ctx = &Context{}
 
 	doc, err := goxml.Parse(r)
 	if err != nil {
 		return nil, err
 	}
 
-	xp.ctx.nn = NewNodeNavigator(doc)
-	xp.ctx.vars = make(map[string]Sequence)
+	xp.ctx = NewContext(doc)
 	return xp, nil
 }

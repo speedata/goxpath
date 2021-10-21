@@ -18,10 +18,16 @@ func fnBoolean(args []Sequence) (Sequence, error) {
 
 func fnConcat(args []Sequence) (Sequence, error) {
 	var str []string
+
 	for _, seq := range args {
 		str = append(str, seq.stringvalue())
 	}
 	return Sequence{strings.Join(str, "")}, nil
+}
+
+func fnCount(args []Sequence) (Sequence, error) {
+	seq := args[0]
+	return Sequence{len(seq)}, nil
 }
 
 func fnFalse(args []Sequence) (Sequence, error) {
@@ -51,6 +57,7 @@ func init() {
 	RegisterFunction(&Function{Name: "boolean", Namespace: fnNS, F: fnBoolean, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
+	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
@@ -80,7 +87,7 @@ func hasFunction(name string) bool {
 	return ok
 }
 
-func callFunction(name string, arguments Sequence) (Sequence, error) {
+func callFunction(name string, arguments []Sequence) (Sequence, error) {
 	fn := getfunction(name)
 
 	if min := fn.MinArg; min > 0 {
@@ -93,9 +100,5 @@ func callFunction(name string, arguments Sequence) (Sequence, error) {
 			return nil, fmt.Errorf("too many arguments in function call (%q), max: %d, got %d (%#v)", fn.Name, fn.MaxArg, len(arguments), arguments)
 		}
 	}
-	var args []Sequence
-	for _, arg := range arguments {
-		args = append(args, Sequence{arg})
-	}
-	return fn.F(args)
+	return fn.F(arguments)
 }
