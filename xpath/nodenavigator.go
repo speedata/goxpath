@@ -10,6 +10,7 @@ import (
 type NodeNavigator struct {
 	current []goxml.XMLNode
 	xmldoc  *goxml.XMLDocument
+	ctx     *Context
 }
 
 // NewNodeNavigator returns a new node navigator from the xml document
@@ -38,7 +39,8 @@ type testfuncChildren func(*goxml.Element) bool
 type testfuncAttributes func(goxml.XMLNode) bool
 
 // Child returns all children of the current node that satisfy the testfunc
-func (nn *NodeNavigator) Child(tf testfuncChildren) ([]goxml.XMLNode, error) {
+func (nn *NodeNavigator) Child(tf testfuncChildren, ctx *Context) ([]goxml.XMLNode, error) {
+	fmt.Println("nn/Child")
 	var nodes []goxml.XMLNode
 	for _, n := range nn.current {
 		for _, c := range n.Children() {
@@ -51,6 +53,11 @@ func (nn *NodeNavigator) Child(tf testfuncChildren) ([]goxml.XMLNode, error) {
 	}
 	fmt.Println(nodes)
 	nn.current = nodes
+	var seq Sequence
+	for _, n := range nodes {
+		seq = append(seq, n)
+	}
+	ctx.context = seq
 	return nodes, nil
 }
 
@@ -59,7 +66,6 @@ func returnIsNameTF(name string) testfuncChildren {
 		if elt.Name == name {
 			return true
 		}
-
 		return false
 	}
 	return tf

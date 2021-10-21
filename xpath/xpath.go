@@ -12,6 +12,7 @@ import (
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
 
+// Context is needed for variables and XML navigation.
 type Context struct {
 	vars    map[string]Sequence
 	nn      *NodeNavigator
@@ -19,6 +20,7 @@ type Context struct {
 	current Sequence
 }
 
+// Filter applies prediates to the context
 func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	var result Sequence
 	var predicateIsNum bool
@@ -781,23 +783,77 @@ func parseValueExpr(tl *tokenlist) (evalFunc, error) {
 // [25] PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
 func parsePathExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "25 parsePathExpr")
-	var ef evalFunc
-	ef, err := parseRelativePathExpr(tl)
+	var rpe evalFunc
+	var op string
+	var hasOP bool
+	op, hasOP = tl.readNexttokIfIsOneOfValue([]string{"/", "//"})
+
+	rpe, err := parseRelativePathExpr(tl)
 	if err != nil {
 		return nil, err
 	}
 
+	if hasOP {
+		switch op {
+		case "/":
+			fn := func(ctx *Context) (Sequence, error) {
+				ctx.nn.Document()
+				seq, err := rpe(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return seq, nil
+			}
+			return fn, nil
+		case "//":
+			panic("nyi")
+		}
+	}
+
 	leaveStep(tl, "25 parsePathExpr")
-	return ef, nil
+	return rpe, nil
 }
 
 // [26] RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*
 func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "26 parseRelativePathExpr")
 	var ef evalFunc
-	ef, err := parseStepExpr(tl)
-	if err != nil {
-		return nil, err
+	var efs []evalFunc
+	var ops []string
+	var err error
+
+	for {
+		ef, err := parseStepExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, ef)
+		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"/", "//"}); ok {
+			ops = append(ops, op)
+		} else {
+			break
+		}
+	}
+	if len(efs) == 1 {
+		leaveStep(tl, "26 parseRelativePathExpr")
+		return efs[0], nil // just a simple StepExpr
+	}
+
+	ef = func(ctx *Context) (Sequence, error) {
+		var seq Sequence
+		for i := 0; i < len(efs); i++ {
+			fmt.Printf("i %#v\n", i)
+			if seq, err = efs[i](ctx); err != nil {
+				return nil, err
+			}
+			fmt.Printf("seq %#v\n", seq)
+			// switch ops[i] {
+			// case "/":
+			// 	fmt.Println("/")
+			// }
+		}
+
+		return ctx.context, nil
 	}
 
 	leaveStep(tl, "26 parseRelativePathExpr")
@@ -812,19 +868,88 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
+	if ef == nil {
+		ef, err = parseAxisStepExpr(tl)
+	}
 
+	if ef == nil {
+		ef = func(ctx *Context) (Sequence, error) {
+			fmt.Println("return empty sequence")
+			return Sequence{}, nil
+		}
+	}
+	fmt.Println("found axis step")
 	leaveStep(tl, "27 parseStepExpr")
 	return ef, nil
 }
 
 // [28] AxisStep ::= (ReverseStep | ForwardStep) PredicateList
+func parseAxisStepExpr(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "28 parseAxisStepExpr")
+	var ef evalFunc
+	var err error
+	if ef, err = parseForwardStepExpr(tl); err != nil {
+		return nil, err
+	}
+	leaveStep(tl, "28 parseAxisStepExpr")
+	return ef, nil
+}
+
 // [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
+// [31] AbbrevForwardStep ::= "@"? NodeTest
+func parseForwardStepExpr(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, " 29 parseForwardStepExpr")
+	var ef evalFunc
+	var err error
+	if ef, err = parseNodeTest(tl); err != nil {
+		return nil, err
+	}
+
+	leaveStep(tl, "29 parseForwardStepExpr")
+	return ef, nil
+}
+
 // [30] ForwardAxis ::= ("child" "::") | ("descendant" "::")| ("attribute" "::")| ("self" "::")| ("descendant-or-self" "::")| ("following-sibling" "::")| ("following" "::")| ("namespace" "::")
 // [32] ReverseStep ::= (ReverseAxis NodeTest) | AbbrevReverseStep
 // [34] AbbrevReverseStep ::= ".."
 // [33] ReverseAxis ::= ("parent" "::") | ("ancestor" "::") | ("preceding-sibling" "::") | ("preceding" "::") | ("ancestor-or-self" "::")
 // [35] NodeTest ::= KindTest | NameTest
+func parseNodeTest(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "35 parseNodeTestExpr")
+	var ef evalFunc
+	var err error
+	if ef, err = parseNameTest(tl); err != nil {
+		return nil, err
+	}
+
+	leaveStep(tl, "35 parseNodeTestExpr")
+	return ef, nil
+}
+
 // [36] NameTest ::= QName | Wildcard
+func parseNameTest(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "36 parseNameTest")
+	var ef evalFunc
+
+	fmt.Println("parse name test")
+	if tl.nexttokIsTyp(TokQName) {
+		n, err := tl.read()
+		if err != nil {
+			return nil, err
+		}
+
+		ef = func(ctx *Context) (Sequence, error) {
+			fmt.Printf("call nn.Child for %s\n", n.Value)
+			ctx.nn.Child(returnIsNameTF(n.Value.(string)), ctx)
+			return ctx.context, nil
+		}
+	} else {
+		return nil, fmt.Errorf("nametest failed")
+	}
+	leaveStep(tl, "36 parseNameTest")
+	return ef, nil
+}
+
 // [37] Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
 
 // [38] FilterExpr ::= PrimaryExpr PredicateList
@@ -923,11 +1048,8 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		return ef, nil
 	}
 	tl.unread()
-	ef = func(ctx *Context) (Sequence, error) {
-		return Sequence{}, nil
-	}
 	leaveStep(tl, "41 parsePrimaryExpr")
-	return ef, nil
+	return nil, nil
 }
 
 // [46] ParenthesizedExpr ::= "(" Expr? ")"
@@ -1016,6 +1138,8 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	leaveStep(tl, "48 parseFunctionCall")
 	return ef, nil
 }
+
+// [54] KindTest ::= DocumentTest| ElementTest| AttributeTest| SchemaElementTest| SchemaAttributeTest| PITest| CommentTest| TextTest| AnyKindTest
 
 func parseXPath(tl *tokenlist) (evalFunc, error) {
 	ef, err := parseExpr(tl)
