@@ -91,6 +91,10 @@ func TestEval(t *testing.T) {
 		{`(1,2)[true()]`, Sequence{1.0, 2.0}},
 		{`(1,2)[false()]`, Sequence{}},
 		{`( (),2 )[1]`, Sequence{2.0}},
+		{`( (),2 )[position() = 1]`, Sequence{2.0}},
+		{`count(/root/sub)`, Sequence{3}},
+		{`count(/root/sub/subsub)`, Sequence{1}},
+		{`count(/root/other)`, Sequence{2}},
 
 		// assert_false(eval1(" boolean( (false()) )"))
 		// assert_true(eval1("  boolean( (true()) )"))

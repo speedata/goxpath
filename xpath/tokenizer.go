@@ -92,6 +92,10 @@ func (tok token) String() string {
 		return "("
 	case TokCloseParen:
 		return ")"
+	case TokOpenBracket:
+		return "["
+	case TokCloseBracket:
+		return "]"
 	}
 
 	switch v := tok.Value.(type) {

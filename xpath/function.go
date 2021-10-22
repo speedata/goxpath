@@ -11,12 +11,12 @@ const (
 	fnNS = "http://www.w3.org/2005/xpath-functions"
 )
 
-func fnBoolean(args []Sequence) (Sequence, error) {
+func fnBoolean(ctx *Context, args []Sequence) (Sequence, error) {
 	bv, err := booleanValue(args[0])
 	return Sequence{bv}, err
 }
 
-func fnConcat(args []Sequence) (Sequence, error) {
+func fnConcat(ctx *Context, args []Sequence) (Sequence, error) {
 	var str []string
 
 	for _, seq := range args {
@@ -25,16 +25,16 @@ func fnConcat(args []Sequence) (Sequence, error) {
 	return Sequence{strings.Join(str, "")}, nil
 }
 
-func fnCount(args []Sequence) (Sequence, error) {
+func fnCount(ctx *Context, args []Sequence) (Sequence, error) {
 	seq := args[0]
 	return Sequence{len(seq)}, nil
 }
 
-func fnFalse(args []Sequence) (Sequence, error) {
+func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{false}, nil
 }
 
-func fnNot(args []Sequence) (Sequence, error) {
+func fnNot(ctx *Context, args []Sequence) (Sequence, error) {
 	b, err := booleanValue(args[0])
 	if err != nil {
 		return nil, err
@@ -42,12 +42,16 @@ func fnNot(args []Sequence) (Sequence, error) {
 	return Sequence{!b}, nil
 }
 
-func fnNumber(args []Sequence) (Sequence, error) {
+func fnNumber(ctx *Context, args []Sequence) (Sequence, error) {
 	bv, err := numberValue(args[0])
 	return Sequence{bv}, err
 }
 
-func fnTrue(args []Sequence) (Sequence, error) {
+func fnPosition(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{float64(ctx.ctxPosition)}, nil
+}
+
+func fnTrue(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{true}, nil
 }
 
@@ -60,6 +64,7 @@ func init() {
 	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
 	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
 
 }
@@ -68,7 +73,7 @@ func init() {
 type Function struct {
 	Name      string
 	Namespace string
-	F         func([]Sequence) (Sequence, error)
+	F         func(*Context, []Sequence) (Sequence, error)
 	MinArg    int
 	MaxArg    int
 }
@@ -79,6 +84,7 @@ func RegisterFunction(f *Function) {
 }
 
 func getfunction(name string) *Function {
+	// todo: namespace handling etc.
 	return xpathfunctions[name]
 }
 
@@ -87,7 +93,7 @@ func hasFunction(name string) bool {
 	return ok
 }
 
-func callFunction(name string, arguments []Sequence) (Sequence, error) {
+func callFunction(name string, arguments []Sequence, ctx *Context) (Sequence, error) {
 	fn := getfunction(name)
 
 	if min := fn.MinArg; min > 0 {
@@ -100,5 +106,5 @@ func callFunction(name string, arguments []Sequence) (Sequence, error) {
 			return nil, fmt.Errorf("too many arguments in function call (%q), max: %d, got %d (%#v)", fn.Name, fn.MaxArg, len(arguments), arguments)
 		}
 	}
-	return fn.F(arguments)
+	return fn.F(ctx, arguments)
 }
