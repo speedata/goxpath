@@ -2,6 +2,7 @@ package xpath
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -96,26 +97,35 @@ func TestEval(t *testing.T) {
 		// assert_false(eval1(" boolean( () )"))
 
 	}
+	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
+	<sub foo="baz" someattr="somevalue">123</sub>
+	<sub foo="bar">sub2</sub>
+	<sub foo="bar">contents sub3<subsub foo="bar"></subsub></sub>
+	<other foo="barbaz">
+	  <subsub foo="oof">contents subsub other</subsub>
+	</other>
+	<other foo="other2">
+	  <subsub foo="oof">contents subsub other2</subsub>
+	</other>
+  </root>`
+	sr := strings.NewReader(doc)
+	np, err := NewParser(sr)
+	if err != nil {
+		t.Error(err)
+	}
+
 	for _, td := range testdata {
-		tl, err := stringToTokenlist(td.input)
-		if err != nil {
-			t.Errorf(err.Error())
+		for key, value := range map[string]Sequence{
+			"foo":        {"bar"},
+			"onedotfive": {1.5},
+			"a":          {5.0},
+			"two":        {2.0},
+			"one":        {1.0},
+			"one-two":    {12.0},
+		} {
+			np.SetVariable(key, value)
 		}
-		eval, err := parseXPath(tl)
-		if err != nil {
-			t.Errorf(err.Error())
-		}
-		ctx := Context{
-			vars: map[string]Sequence{
-				"foo":        {"bar"},
-				"onedotfive": {1.5},
-				"a":          {5.0},
-				"two":        {2.0},
-				"one":        {1.0},
-				"one-two":    {12.0},
-			},
-		}
-		seq, err := eval(&ctx)
+		seq, err := np.Evaluate(td.input)
 		if err != nil {
 			t.Errorf(err.Error())
 		}
