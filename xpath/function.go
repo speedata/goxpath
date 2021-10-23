@@ -48,7 +48,7 @@ func fnNumber(ctx *Context, args []Sequence) (Sequence, error) {
 }
 
 func fnPosition(ctx *Context, args []Sequence) (Sequence, error) {
-	return Sequence{float64(ctx.ctxPosition)}, nil
+	return Sequence{ctx.pos}, nil
 }
 
 func fnTrue(ctx *Context, args []Sequence) (Sequence, error) {

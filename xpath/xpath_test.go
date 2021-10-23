@@ -63,8 +63,12 @@ func TestEval(t *testing.T) {
 		{`boolean(1)`, Sequence{true}},
 		{`boolean(0)`, Sequence{false}},
 		{`boolean(false())`, Sequence{false}},
+		{`boolean( (true()) )`, Sequence{true}},
+		{`boolean( ((true())) )`, Sequence{true}},
 		{`boolean(true())`, Sequence{true}},
 		{`boolean('')`, Sequence{false}},
+		{`boolean( () )`, Sequence{false}},
+		{`boolean( (()) )`, Sequence{false}},
 		{`boolean('false')`, Sequence{true}},
 		// {`number('zzz')`, sequence{math.NaN()}},
 		{`3 + 4 - 2`, Sequence{5.0}},
@@ -95,11 +99,10 @@ func TestEval(t *testing.T) {
 		{`count(/root/sub)`, Sequence{3}},
 		{`count(/root/sub/subsub)`, Sequence{1}},
 		{`count(/root/other)`, Sequence{2}},
-
-		// assert_false(eval1(" boolean( (false()) )"))
-		// assert_true(eval1("  boolean( (true()) )"))
-		// assert_false(eval1(" boolean( () )"))
-
+		{`count(/root/a/sub[position() = 1])`, Sequence{2}},
+		{`(count(/root/a/sub)[position() = 1])`, Sequence{4}},
+		{`count( (/root/a/sub)[position() = 2]) `, Sequence{1}},
+		// {`count(/root/a/sub[1])`, Sequence{2}},
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
@@ -111,7 +114,15 @@ func TestEval(t *testing.T) {
 	<other foo="other2">
 	  <subsub foo="oof">contents subsub other2</subsub>
 	</other>
-  </root>`
+	<a>
+	<sub p="a1/1"></sub>
+	<sub p="a1/2"></sub>
+  </a>
+  <a>
+	<sub  p="a2/1"></sub>
+	<sub  p="a2/2"></sub>
+  </a>
+</root>`
 	sr := strings.NewReader(doc)
 	np, err := NewParser(sr)
 	if err != nil {

@@ -14,10 +14,11 @@ var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed 
 
 // Context is needed for variables and XML navigation.
 type Context struct {
-	vars        map[string]Sequence
-	context     Sequence
-	ctxPosition int
-	xmldoc      *goxml.XMLDocument
+	vars         map[string]Sequence
+	context      Sequence
+	ctxPositions []int
+	pos          int
+	xmldoc       *goxml.XMLDocument
 }
 
 // NewContext returns a context from the xml document
@@ -33,6 +34,7 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 // Document moves the node navigator to the document and retuns it
 func (ctx *Context) Document() goxml.XMLNode {
 	ctx.context = Sequence{ctx.xmldoc}
+	ctx.ctxPositions = nil
 	return ctx.xmldoc
 }
 
@@ -44,6 +46,7 @@ func (ctx *Context) Root() (Sequence, error) {
 		return nil, err
 	}
 	ctx.context = Sequence{cur}
+	ctx.ctxPositions = nil
 	return ctx.context, err
 }
 
@@ -53,11 +56,15 @@ type testfuncAttributes func(goxml.XMLNode) bool
 // Child returns all children of the current node that satisfy the testfunc
 func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
 	var seq Sequence
+	ctx.ctxPositions = []int{}
 	for _, n := range ctx.context {
 		if node, ok := n.(goxml.XMLNode); ok {
+			pos := 0
 			for _, c := range node.Children() {
 				if celt, ok := c.(*goxml.Element); ok {
 					if tf(celt) {
+						pos++
+						ctx.ctxPositions = append(ctx.ctxPositions, pos)
 						seq = append(seq, celt)
 					}
 				}
@@ -90,9 +97,18 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		return Sequence{ctx.context[predicateNum-1]}, nil
 	}
 	copyContext := ctx.context
+	var positions []int
+	if ctx.ctxPositions != nil {
+		positions = ctx.ctxPositions
+	} else {
+		positions = make([]int, len(ctx.context))
+		for i := 0; i < len(ctx.context); i++ {
+			positions[i] = i + 1
+		}
+	}
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
-		ctx.ctxPosition = i + 1
+		ctx.pos = positions[i]
 		predicate, err := filter(ctx)
 		if err != nil {
 			return nil, err
@@ -1021,7 +1037,7 @@ func parseAxisStepExpr(tl *tokenlist) (evalFunc, error) {
 				return nil, err
 			}
 			ff := func(ctx *Context) (Sequence, error) {
-				ctx.context, err = ef(ctx)
+				_, err = ef(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -1123,6 +1139,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 				if err != nil {
 					return nil, err
 				}
+				ctx.ctxPositions = nil
 				return ctx.Filter(predicate)
 			}
 			leaveStep(tl, "38 parseFilterExpr")
@@ -1215,6 +1232,7 @@ func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return seq, nil
 	}
 
