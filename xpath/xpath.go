@@ -194,12 +194,63 @@ func doCompareFloat(op string, a, b float64) (bool, error) {
 	return false, fmt.Errorf("unknown operator %s", op)
 }
 
-func compareFunc(op string, a, b interface{}) (bool, error) {
-	if left, ok := a.(float64); ok {
-		if right, ok := b.(float64); ok {
-			return doCompareFloat(op, left, right)
-		}
+func doCompareInt(op string, a, b int) (bool, error) {
+	switch op {
+	case "<":
+		return a < b, nil
+	case "=":
+		return a == b, nil
+	case ">":
+		return a > b, nil
+	case ">=":
+		return a >= b, nil
+	case "<=":
+		return a <= b, nil
+	case "!=":
+		return a != b, nil
 	}
+	return false, fmt.Errorf("unknown operator %s", op)
+}
+
+type datatype int
+
+const (
+	xUnknown datatype = iota
+	xDouble
+	xInteger
+)
+
+func compareFunc(op string, a, b interface{}) (bool, error) {
+	var floatLeft, floatRight float64
+	var intLeft, intRight int
+	var dtLeft, dtRight datatype
+	var ok bool
+	if floatLeft, ok = a.(float64); ok {
+		dtLeft = xDouble
+	}
+	if floatRight, ok = b.(float64); ok {
+		dtRight = xDouble
+	}
+	if intLeft, ok = a.(int); ok {
+		dtLeft = xInteger
+	}
+	if intRight, ok = b.(int); ok {
+		dtRight = xInteger
+	}
+
+	if dtLeft == xDouble && dtRight == xDouble {
+		return doCompareFloat(op, floatLeft, floatRight)
+	}
+	if dtLeft == xInteger && dtRight == xInteger {
+		return doCompareInt(op, intLeft, intRight)
+	}
+	if dtLeft == xDouble && dtRight == xInteger {
+		return doCompareInt(op, int(floatLeft), intRight)
+	}
+	if dtLeft == xInteger && dtRight == xDouble {
+		return doCompareInt(op, intLeft, int(floatRight))
+	}
+
 	if left, ok := a.(string); ok {
 		if right, ok := b.(string); ok {
 			return doCompareString(op, left, right)
