@@ -84,18 +84,7 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(predicate) == 1 {
-		if p0, ok := predicate[0].(float64); ok {
-			predicateIsNum = true
-			predicateNum = int(p0)
-		}
-	}
-	if predicateIsNum {
-		if predicateNum > len(ctx.context) {
-			return Sequence{}, nil
-		}
-		return Sequence{ctx.context[predicateNum-1]}, nil
-	}
+
 	copyContext := ctx.context
 	var positions []int
 	if ctx.ctxPositions != nil {
@@ -106,6 +95,26 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 			positions[i] = i + 1
 		}
 	}
+
+	if len(predicate) == 1 {
+		if p0, ok := predicate[0].(float64); ok {
+			predicateIsNum = true
+			predicateNum = int(p0)
+		}
+	}
+	if predicateIsNum {
+		var seq Sequence
+		if predicateNum > len(ctx.context) {
+			return Sequence{}, nil
+		}
+		for _, pos := range positions {
+			if pos == predicateNum {
+				seq = append(seq, ctx.context[pos-1])
+			}
+		}
+		return seq, nil
+	}
+
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
 		ctx.pos = positions[i]

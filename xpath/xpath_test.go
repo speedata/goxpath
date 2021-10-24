@@ -81,6 +81,14 @@ func TestEval(t *testing.T) {
 		{`-3 div 2 `, Sequence{-1.5}},
 		{`$one-two div $a`, Sequence{2.4}},
 		{`$one-two idiv $a`, Sequence{2.0}},
+		{`10 idiv 3`, Sequence{3.0}},
+		{`3 idiv -2`, Sequence{-1.0}},
+		{`-3 idiv 2`, Sequence{-1.0}},
+		{`-3 idiv -2`, Sequence{1.0}},
+		{`9.0 idiv 3`, Sequence{3.0}},
+		{`-3.5 idiv 3`, Sequence{-1.0}},
+		{`-3.5 idiv 3`, Sequence{-1.0}},
+		{`3.0 idiv 4`, Sequence{0.0}},
 		{`7 div 2 = 3.5 `, Sequence{true}},
 		{`8 mod 2 = 0 `, Sequence{true}},
 		{`(1,2) `, Sequence{1.0, 2.0}},
@@ -102,7 +110,9 @@ func TestEval(t *testing.T) {
 		{`count(/root/a/sub[position() = 1])`, Sequence{2}},
 		{`(count(/root/a/sub)[position() = 1])`, Sequence{4}},
 		{`count( (/root/a/sub)[position() = 2]) `, Sequence{1}},
-		// {`count(/root/a/sub[1])`, Sequence{2}},
+		{`count(/root/a/sub[1])`, Sequence{2}},
+		{`(count(/root/a/sub)[1])`, Sequence{4}},
+		{`count( (/root/a/sub)[2]) `, Sequence{1}},
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
@@ -145,11 +155,11 @@ func TestEval(t *testing.T) {
 			t.Errorf(err.Error())
 		}
 		if got, want := len(seq), len(td.result); got != want {
-			t.Errorf("len(seq) = %d, want %d", got, want)
+			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
 		}
 		for i, itm := range seq {
 			if itm != td.result[i] {
-				t.Errorf("seq[%d] = %v, want %v. Test: %s", i, itm, td.result[i], td.input)
+				t.Errorf("seq[%d] = %v, want %v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
 	}
