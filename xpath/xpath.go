@@ -105,7 +105,7 @@ func (ctx *Context) Attributes(tf testfuncAttributes) (Sequence, error) {
 	return seq, nil
 }
 
-// Filter applies prediates to the context
+// Filter applies predicates to the context
 func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	var result Sequence
 	var predicateIsNum bool
@@ -169,10 +169,11 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 			result = append(result, itm)
 		}
 	}
-
+	ctx.size = len(result)
 	if len(result) == 0 {
 		result = Sequence{}
 	}
+	ctx.context = result
 	return result, nil
 }
 
@@ -1056,20 +1057,23 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	ef = func(ctx *Context) (Sequence, error) {
+		var retseq Sequence
 		var seq Sequence
 		for i := 0; i < len(efs); i++ {
-
-			if seq, err = efs[i](ctx); err != nil {
-				return nil, err
+			retseq = retseq[:0]
+			copyContext := ctx.context
+			ctx.size = len(copyContext)
+			for j, itm := range copyContext {
+				ctx.context = Sequence{itm}
+				ctx.pos = j + 1
+				if seq, err = efs[i](ctx); err != nil {
+					return nil, err
+				}
+				retseq = append(retseq, seq...)
 			}
-			// fmt.Printf("26 seq %#v\n", seq)
-			// switch ops[i] {
-			// case "/":
-			// 	fmt.Println("/")
-			// }
 		}
 
-		return seq, nil
+		return retseq, nil
 	}
 
 	leaveStep(tl, "26 parseRelativePathExpr")
@@ -1200,6 +1204,7 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 		} else {
 			ef = func(ctx *Context) (Sequence, error) {
 				ctx.Child(returnIsNameTF(n.Value.(string)))
+				ctx.size = len(ctx.context)
 				return ctx.context, nil
 			}
 		}
@@ -1241,6 +1246,8 @@ func parseWildCard(tl *tokenlist) (evalFunc, error) {
 			} else {
 				ef = func(ctx *Context) (Sequence, error) {
 					ctx.Child(returnIsNameTF(str))
+					// necessary?
+					ctx.size = len(ctx.context)
 					return ctx.context, nil
 				}
 

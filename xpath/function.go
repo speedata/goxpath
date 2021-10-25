@@ -2,6 +2,7 @@ package xpath
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -11,9 +12,21 @@ const (
 	fnNS = "http://www.w3.org/2005/xpath-functions"
 )
 
+func fnAbs(ctx *Context, args []Sequence) (Sequence, error) {
+	seq := args[0]
+	itm, err := numberValue(seq)
+	return Sequence{math.Abs(itm)}, err
+}
+
 func fnBoolean(ctx *Context, args []Sequence) (Sequence, error) {
 	bv, err := booleanValue(args[0])
 	return Sequence{bv}, err
+}
+
+func fnCeiling(ctx *Context, args []Sequence) (Sequence, error) {
+	seq := args[0]
+	itm, err := numberValue(seq)
+	return Sequence{math.Ceil(itm)}, err
 }
 
 func fnConcat(ctx *Context, args []Sequence) (Sequence, error) {
@@ -72,13 +85,15 @@ func fnTrue(ctx *Context, args []Sequence) (Sequence, error) {
 func init() {
 	xpathfunctions = make(map[string]*Function)
 
+	RegisterFunction(&Function{Name: "abs", Namespace: fnNS, F: fnAbs, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "boolean", Namespace: fnNS, F: fnBoolean, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "ceiling", Namespace: fnNS, F: fnCeiling, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
 	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
 	RegisterFunction(&Function{Name: "last", Namespace: fnNS, F: fnLast})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
 	RegisterFunction(&Function{Name: "string", Namespace: fnNS, F: fnString, MinArg: 0, MaxArg: 1})
 	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
