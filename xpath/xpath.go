@@ -17,7 +17,9 @@ type Context struct {
 	vars         map[string]Sequence
 	context      Sequence
 	ctxPositions []int
+	ctxLengths   []int
 	pos          int
+	size         int
 	xmldoc       *goxml.XMLDocument
 }
 
@@ -35,6 +37,7 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 func (ctx *Context) Document() goxml.XMLNode {
 	ctx.context = Sequence{ctx.xmldoc}
 	ctx.ctxPositions = nil
+	ctx.ctxLengths = nil
 	return ctx.xmldoc
 }
 
@@ -47,6 +50,7 @@ func (ctx *Context) Root() (Sequence, error) {
 	}
 	ctx.context = Sequence{cur}
 	ctx.ctxPositions = nil
+	ctx.ctxLengths = nil
 	return ctx.context, err
 }
 
@@ -57,17 +61,23 @@ type testfuncAttributes func(*goxml.Attribute) bool
 func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
 	var seq Sequence
 	ctx.ctxPositions = []int{}
+	ctx.ctxLengths = []int{}
 	for _, n := range ctx.context {
 		if node, ok := n.(goxml.XMLNode); ok {
 			pos := 0
-			for _, c := range node.Children() {
-				if celt, ok := c.(*goxml.Element); ok {
+			l := 0
+			for _, cld := range node.Children() {
+				if celt, ok := cld.(*goxml.Element); ok {
 					if tf(celt) {
 						pos++
+						l++
 						ctx.ctxPositions = append(ctx.ctxPositions, pos)
 						seq = append(seq, celt)
 					}
 				}
+			}
+			for i := 0; i < l; i++ {
+				ctx.ctxLengths = append(ctx.ctxLengths, l)
 			}
 		}
 	}
@@ -100,26 +110,36 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	var result Sequence
 	var predicateIsNum bool
 	var predicateNum int
-	predicate, err := filter(ctx)
-	if err != nil {
-		return nil, err
-	}
 
+	var lengths []int
 	var positions []int
 
 	if ctx.ctxPositions != nil {
 		positions = ctx.ctxPositions
+		lengths = ctx.ctxLengths
 	} else {
 		positions = make([]int, len(ctx.context))
+		lengths = make([]int, len(ctx.context))
 		for i := 0; i < len(ctx.context); i++ {
 			positions[i] = i + 1
+			lengths[i] = 1
 		}
 	}
 
+	copyContext := ctx.context
+	ctx.size = lengths[0]
+
+	predicate, err := filter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if len(predicate) == 1 {
 		if p0, ok := predicate[0].(float64); ok {
 			predicateIsNum = true
 			predicateNum = int(p0)
+		} else if p0, ok := predicate[0].(int); ok {
+			predicateIsNum = true
+			predicateNum = p0
 		}
 	}
 	if predicateIsNum {
@@ -133,15 +153,14 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		return seq, nil
 	}
 
-	copyContext := ctx.context
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
 		ctx.pos = positions[i]
+		ctx.size = lengths[i]
 		predicate, err := filter(ctx)
 		if err != nil {
 			return nil, err
 		}
-
 		evalItem, err := booleanValue(predicate)
 		if err != nil {
 			return nil, err
@@ -150,6 +169,7 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 			result = append(result, itm)
 		}
 	}
+
 	if len(result) == 0 {
 		result = Sequence{}
 	}
@@ -279,12 +299,15 @@ const (
 	xUnknown datatype = iota
 	xDouble
 	xInteger
+	xString
 )
 
 func compareFunc(op string, a, b interface{}) (bool, error) {
 	var floatLeft, floatRight float64
 	var intLeft, intRight int
+	var stringLeft, stringRight string
 	var dtLeft, dtRight datatype
+
 	var ok bool
 	if floatLeft, ok = a.(float64); ok {
 		dtLeft = xDouble
@@ -297,6 +320,20 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	}
 	if intRight, ok = b.(int); ok {
 		dtRight = xInteger
+	}
+	if stringLeft, ok = a.(string); ok {
+		dtLeft = xString
+	}
+	if stringRight, ok = b.(string); ok {
+		dtRight = xString
+	}
+	if attLeft, ok := a.(*goxml.Attribute); ok {
+		dtLeft = xString
+		stringLeft = attLeft.Stringvalue()
+	}
+	if attRight, ok := b.(*goxml.Attribute); ok {
+		dtRight = xString
+		stringRight = attRight.Stringvalue()
 	}
 
 	if dtLeft == xDouble && dtRight == xDouble {
@@ -311,11 +348,8 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	if dtLeft == xInteger && dtRight == xDouble {
 		return doCompareInt(op, intLeft, int(floatRight))
 	}
-
-	if left, ok := a.(string); ok {
-		if right, ok := b.(string); ok {
-			return doCompareString(op, left, right)
-		}
+	if dtLeft == xString && dtRight == xString {
+		return doCompareString(op, stringLeft, stringRight)
 	}
 
 	return false, fmt.Errorf("FORG0001")
@@ -331,7 +365,6 @@ func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		var isCompare bool
 		for _, leftitem := range left {
 			for _, rightitem := range right {
 				ok, err := compareFunc(op, leftitem, rightitem)
@@ -339,12 +372,11 @@ func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 					return nil, err
 				}
 				if ok {
-					isCompare = true
-					break
+					return Sequence{true}, nil
 				}
 			}
 		}
-		return Sequence{isCompare}, nil
+		return Sequence{false}, nil
 	}
 	return f, nil
 }
@@ -355,6 +387,9 @@ func numberValue(s Sequence) (float64, error) {
 	}
 	if len(s) > 1 {
 		return math.NaN(), fmt.Errorf("Required cardinality of first argument of fn:number() is zero or one; supplied value has cardinality more than one")
+	}
+	if num, ok := s[0].(int); ok {
+		return float64(num), nil
 	}
 
 	if flt, ok := s[0].(float64); ok {
@@ -1240,6 +1275,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 					return nil, err
 				}
 				ctx.ctxPositions = nil
+				ctx.ctxLengths = nil
 				return ctx.Filter(predicate)
 			}
 			leaveStep(tl, "38 parseFilterExpr")

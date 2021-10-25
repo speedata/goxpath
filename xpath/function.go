@@ -34,6 +34,10 @@ func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{false}, nil
 }
 
+func fnLast(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{ctx.size}, nil
+}
+
 func fnNot(ctx *Context, args []Sequence) (Sequence, error) {
 	b, err := booleanValue(args[0])
 	if err != nil {
@@ -73,6 +77,7 @@ func init() {
 	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
 	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
+	RegisterFunction(&Function{Name: "last", Namespace: fnNS, F: fnLast})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
 	RegisterFunction(&Function{Name: "string", Namespace: fnNS, F: fnString, MinArg: 0, MaxArg: 1})

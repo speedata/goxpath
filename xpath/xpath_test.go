@@ -114,7 +114,10 @@ func TestEval(t *testing.T) {
 		{`count(/root/a/sub[1])`, Sequence{2}},
 		{`(count(/root/a/sub)[1])`, Sequence{4}},
 		{`count( (/root/a/sub)[2]) `, Sequence{1}},
+		{`count( /root/sub[position() mod 2 = 0])) `, Sequence{1}},
+		{`count( /root/sub[position() mod 2 = 1])) `, Sequence{2}},
 		{`for $i in /root/other/@*[1] return string($i) `, Sequence{"barbaz", "other2"}},
+		{`string(/root/sub[position() mod 2 = 0]/@foo)`, Sequence{"bar"}},
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
