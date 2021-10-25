@@ -51,6 +51,16 @@ func fnPosition(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{ctx.pos}, nil
 }
 
+func fnString(ctx *Context, args []Sequence) (Sequence, error) {
+	var arg Sequence
+	if len(args) == 0 {
+		arg = ctx.context
+	} else {
+		arg = args[0]
+	}
+	return Sequence{arg.stringvalue()}, nil
+}
+
 func fnTrue(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{true}, nil
 }
@@ -65,6 +75,7 @@ func init() {
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
+	RegisterFunction(&Function{Name: "string", Namespace: fnNS, F: fnString, MinArg: 0, MaxArg: 1})
 	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
 
 }

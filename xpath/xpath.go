@@ -139,7 +139,7 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 
 func returnIsNameTF(name string) testfuncChildren {
 	tf := func(elt *goxml.Element) bool {
-		if elt.Name == name {
+		if name == "*" || elt.Name == name {
 			return true
 		}
 		return false
@@ -168,7 +168,12 @@ func (s Sequence) String() string {
 func (s Sequence) stringvalue() string {
 	var sb strings.Builder
 	for _, itm := range s {
-		fmt.Fprintf(&sb, "%s", itm)
+		switch t := itm.(type) {
+		case float64:
+			fmt.Fprintf(&sb, "%f", t)
+		default:
+			fmt.Fprintf(&sb, "%s", t)
+		}
 	}
 	return sb.String()
 }
@@ -1015,6 +1020,10 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 	if ef == nil {
 		ef, err = parseAxisStepExpr(tl)
 	}
+	if err != nil {
+		leaveStep(tl, "27 parseStepExpr (err)")
+		return nil, err
+	}
 
 	if ef == nil {
 		ef = func(ctx *Context) (Sequence, error) {
@@ -1032,6 +1041,7 @@ func parseAxisStepExpr(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	var err error
 	if ef, err = parseForwardStepExpr(tl); err != nil {
+		leaveStep(tl, "28 parseAxisStepExpr (err)")
 		return nil, err
 	}
 	for {
@@ -1091,6 +1101,7 @@ func parseNodeTest(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	var err error
 	if ef, err = parseNameTest(tl); err != nil {
+		leaveStep(tl, "35 parseNodeTestExpr (err)")
 		return nil, err
 	}
 
@@ -1102,7 +1113,7 @@ func parseNodeTest(tl *tokenlist) (evalFunc, error) {
 func parseNameTest(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "36 parseNameTest")
 	var ef evalFunc
-
+	var err error
 	if tl.nexttokIsTyp(TokQName) {
 		n, err := tl.read()
 		if err != nil {
@@ -1113,14 +1124,43 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 			ctx.Child(returnIsNameTF(n.Value.(string)))
 			return ctx.context, nil
 		}
-	} else {
-		return nil, fmt.Errorf("nametest failed")
+		leaveStep(tl, "36 parseNameTest")
+		return ef, nil
+	}
+	// leaveStep(tl, "36 parseNameTest (err)")
+	// return nil, fmt.Errorf("nametest failed")
+
+	ef, err = parseWildCard(tl)
+	if err != nil {
+		return nil, err
 	}
 	leaveStep(tl, "36 parseNameTest")
 	return ef, nil
 }
 
 // [37] Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
+func parseWildCard(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "37 parseWildCard")
+	var ef evalFunc
+	var err error
+	var strTok *token
+	if strTok, err = tl.read(); err != nil {
+		return nil, err
+	}
+
+	if str, ok := strTok.Value.(string); ok {
+		if str == "*" || strings.HasPrefix(str, "*:") || strings.HasSuffix(str, ":*") {
+			ef = func(ctx *Context) (Sequence, error) {
+				ctx.Child(returnIsNameTF(str))
+				return ctx.context, nil
+			}
+		}
+	} else {
+		tl.unread()
+	}
+	leaveStep(tl, "37 parseWildCard")
+	return ef, nil
+}
 
 // [38] FilterExpr ::= PrimaryExpr PredicateList
 // [39] PredicateList ::= Predicate*
@@ -1291,8 +1331,10 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	}
 
 	if err = tl.skipType(TokCloseParen); err != nil {
+		leaveStep(tl, "48 parseFunctionCall (err)")
 		return nil, fmt.Errorf("close paren expected")
 	}
+
 	// get expr single *
 	ef = func(ctx *Context) (Sequence, error) {
 		var arguments []Sequence
