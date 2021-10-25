@@ -110,8 +110,9 @@ func (tok token) String() string {
 }
 
 type tokenlist struct {
-	pos  int
-	toks tokens
+	pos           int
+	toks          tokens
+	attributeMode bool // for Name Test
 }
 
 func (tl *tokenlist) nexttokIsTyp(typ tokenType) bool {

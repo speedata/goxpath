@@ -77,7 +77,6 @@ func init() {
 	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
 	RegisterFunction(&Function{Name: "string", Namespace: fnNS, F: fnString, MinArg: 0, MaxArg: 1})
 	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
-
 }
 
 // Function represents an XPath function

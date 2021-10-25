@@ -51,7 +51,7 @@ func (ctx *Context) Root() (Sequence, error) {
 }
 
 type testfuncChildren func(*goxml.Element) bool
-type testfuncAttributes func(goxml.XMLNode) bool
+type testfuncAttributes func(*goxml.Attribute) bool
 
 // Child returns all children of the current node that satisfy the testfunc
 func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
@@ -75,6 +75,26 @@ func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
 	return seq, nil
 }
 
+// Attributes returns all attributes of the current node that satisfy the testfunc
+func (ctx *Context) Attributes(tf testfuncAttributes) (Sequence, error) {
+	var seq Sequence
+	ctx.ctxPositions = []int{}
+	for _, n := range ctx.context {
+		if node, ok := n.(goxml.XMLNode); ok {
+			if elt, ok := node.(*goxml.Element); ok {
+				for _, attr := range elt.Attributes() {
+					if tf(attr) {
+						ctx.ctxPositions = append(ctx.ctxPositions, 1)
+						seq = append(seq, attr)
+					}
+				}
+			}
+		}
+	}
+	ctx.context = seq
+	return seq, nil
+}
+
 // Filter applies prediates to the context
 func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	var result Sequence
@@ -85,8 +105,8 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		return nil, err
 	}
 
-	copyContext := ctx.context
 	var positions []int
+
 	if ctx.ctxPositions != nil {
 		positions = ctx.ctxPositions
 	} else {
@@ -104,17 +124,16 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	}
 	if predicateIsNum {
 		var seq Sequence
-		if predicateNum > len(ctx.context) {
-			return Sequence{}, nil
-		}
-		for _, pos := range positions {
-			if pos == predicateNum {
-				seq = append(seq, ctx.context[pos-1])
+		for i, itm := range ctx.context {
+			pos := positions[i]
+			if predicateNum == pos {
+				seq = append(seq, itm)
 			}
 		}
 		return seq, nil
 	}
 
+	copyContext := ctx.context
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
 		ctx.pos = positions[i]
@@ -147,6 +166,16 @@ func returnIsNameTF(name string) testfuncChildren {
 	return tf
 }
 
+func returnIsNameTFAttr(name string) testfuncAttributes {
+	tf := func(elt *goxml.Attribute) bool {
+		if name == "*" || elt.Name == name {
+			return true
+		}
+		return false
+	}
+	return tf
+}
+
 // An Item can hold anything such as a number, a string or a node.
 type Item interface{}
 
@@ -171,6 +200,8 @@ func (s Sequence) stringvalue() string {
 		switch t := itm.(type) {
 		case float64:
 			fmt.Fprintf(&sb, "%f", t)
+		case *goxml.Attribute:
+			fmt.Fprintf(&sb, t.Value)
 		default:
 			fmt.Fprintf(&sb, "%s", t)
 		}
@@ -1080,7 +1111,10 @@ func parseForwardStepExpr(tl *tokenlist) (evalFunc, error) {
 	var err error
 
 	if tl.nexttokIsValue("@") {
-		fmt.Println("@ found")
+		tl.read()
+		tl.attributeMode = true
+	} else {
+		tl.attributeMode = false
 	}
 
 	if ef, err = parseNodeTest(tl); err != nil {
@@ -1119,11 +1153,18 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		ef = func(ctx *Context) (Sequence, error) {
-			ctx.Child(returnIsNameTF(n.Value.(string)))
-			return ctx.context, nil
+		if tl.attributeMode {
+			ef = func(ctx *Context) (Sequence, error) {
+				ctx.Attributes(returnIsNameTFAttr(n.Value.(string)))
+				return ctx.context, nil
+			}
+		} else {
+			ef = func(ctx *Context) (Sequence, error) {
+				ctx.Child(returnIsNameTF(n.Value.(string)))
+				return ctx.context, nil
+			}
 		}
+
 		leaveStep(tl, "36 parseNameTest")
 		return ef, nil
 	}
@@ -1145,14 +1186,24 @@ func parseWildCard(tl *tokenlist) (evalFunc, error) {
 	var err error
 	var strTok *token
 	if strTok, err = tl.read(); err != nil {
+		leaveStep(tl, "37 parseWildCard (err)")
 		return nil, err
 	}
 
 	if str, ok := strTok.Value.(string); ok {
 		if str == "*" || strings.HasPrefix(str, "*:") || strings.HasSuffix(str, ":*") {
-			ef = func(ctx *Context) (Sequence, error) {
-				ctx.Child(returnIsNameTF(str))
-				return ctx.context, nil
+			if tl.attributeMode {
+				ef = func(ctx *Context) (Sequence, error) {
+					ctx.Attributes(returnIsNameTFAttr(str))
+					return ctx.context, nil
+				}
+
+			} else {
+				ef = func(ctx *Context) (Sequence, error) {
+					ctx.Child(returnIsNameTF(str))
+					return ctx.context, nil
+				}
+
 			}
 		}
 	} else {
