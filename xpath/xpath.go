@@ -479,7 +479,7 @@ func parseExprSingle(tl *tokenlist) (evalFunc, error) {
 
 	ef, err = parseOrExpr(tl)
 	if err != nil {
-		leaveStep(tl, "3 parseExprSingle")
+		leaveStep(tl, "3 parseExprSingle (err)")
 		return nil, err
 	}
 	leaveStep(tl, "3 parseExprSingle")
@@ -988,6 +988,7 @@ func parseValueExpr(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	ef, err := parsePathExpr(tl)
 	if err != nil {
+		leaveStep(tl, "21 parseValueExpr (err)")
 		return nil, err
 	}
 
@@ -1081,10 +1082,11 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	ef, err := parseFilterExpr(tl)
 	if err != nil {
+		leaveStep(tl, "27 parseStepExpr (err1)")
 		return nil, err
 	}
 	if ef == nil {
-		ef, err = parseAxisStepExpr(tl)
+		ef, err = parseAxisStep(tl)
 	}
 	if err != nil {
 		leaveStep(tl, "27 parseStepExpr (err)")
@@ -1102,12 +1104,12 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 
 // [28] AxisStep ::= (ReverseStep | ForwardStep) PredicateList
 // [39] PredicateList ::= Predicate*
-func parseAxisStepExpr(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, "28 parseAxisStepExpr")
+func parseAxisStep(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, "28 parseAxisStep")
 	var ef evalFunc
 	var err error
-	if ef, err = parseForwardStepExpr(tl); err != nil {
-		leaveStep(tl, "28 parseAxisStepExpr (err)")
+	if ef, err = parseForwardStep(tl); err != nil {
+		leaveStep(tl, "28 parseAxisStep (err)")
 		return nil, err
 	}
 	for {
@@ -1128,20 +1130,20 @@ func parseAxisStepExpr(tl *tokenlist) (evalFunc, error) {
 				}
 				return ctx.Filter(predicate)
 			}
-			leaveStep(tl, "28 parseAxisStepExpr (a)")
+			leaveStep(tl, "28 parseAxisStep (a)")
 			return ff, nil
 		}
 		break
 	}
 
-	leaveStep(tl, "28 parseAxisStepExpr (b)")
+	leaveStep(tl, "28 parseAxisStep (b)")
 	return ef, nil
 }
 
 // [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
 // [31] AbbrevForwardStep ::= "@"? NodeTest
-func parseForwardStepExpr(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, " 29 parseForwardStepExpr")
+func parseForwardStep(tl *tokenlist) (evalFunc, error) {
+	enterStep(tl, " 29 parseForwardStep")
 	var ef evalFunc
 	var err error
 
@@ -1153,10 +1155,11 @@ func parseForwardStepExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	if ef, err = parseNodeTest(tl); err != nil {
+		leaveStep(tl, "29 parseForwardStep (err)")
 		return nil, err
 	}
 
-	leaveStep(tl, "29 parseForwardStepExpr")
+	leaveStep(tl, "29 parseForwardStep")
 	return ef, nil
 }
 
@@ -1166,15 +1169,15 @@ func parseForwardStepExpr(tl *tokenlist) (evalFunc, error) {
 // [33] ReverseAxis ::= ("parent" "::") | ("ancestor" "::") | ("preceding-sibling" "::") | ("preceding" "::") | ("ancestor-or-self" "::")
 // [35] NodeTest ::= KindTest | NameTest
 func parseNodeTest(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, "35 parseNodeTestExpr")
+	enterStep(tl, "35 parseNodeTest")
 	var ef evalFunc
 	var err error
 	if ef, err = parseNameTest(tl); err != nil {
-		leaveStep(tl, "35 parseNodeTestExpr (err)")
+		leaveStep(tl, "35 parseNodeTest (err)")
 		return nil, err
 	}
 
-	leaveStep(tl, "35 parseNodeTestExpr")
+	leaveStep(tl, "35 parseNodeTest")
 	return ef, nil
 }
 
@@ -1186,6 +1189,7 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 	if tl.nexttokIsTyp(TokQName) {
 		n, err := tl.read()
 		if err != nil {
+			leaveStep(tl, "36 parseNameTest (err)")
 			return nil, err
 		}
 		if tl.attributeMode {
@@ -1208,6 +1212,7 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 
 	ef, err = parseWildCard(tl)
 	if err != nil {
+		leaveStep(tl, "36 parseNameTest (err)")
 		return nil, err
 	}
 	leaveStep(tl, "36 parseNameTest")
@@ -1255,6 +1260,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 	var ef evalFunc
 	ef, err := parsePrimaryExpr(tl)
 	if err != nil {
+		leaveStep(tl, "38 parseFilterExpr (err)")
 		return nil, err
 	}
 	for {
@@ -1295,6 +1301,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 
 	nexttok, err := tl.read()
 	if err != nil {
+		leaveStep(tl, "41 parsePrimaryExpr (err) ")
 		return nil, err
 	}
 

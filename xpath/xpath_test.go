@@ -118,11 +118,12 @@ func TestEval(t *testing.T) {
 		{`count( /root/sub[position() mod 2 = 1])) `, Sequence{2}},
 		{`for $i in /root/other/@*[1] return string($i) `, Sequence{"barbaz", "other2"}},
 		{`string(/root/sub[position() mod 2 = 0]/@foo)`, Sequence{"bar"}},
+		{`string(/root/sub[last()]/@self)`, Sequence{"sub3"}},
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
 	<sub foo="bar">sub2</sub>
-	<sub foo="bar">contents sub3<subsub foo="bar"></subsub></sub>
+	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar"></subsub></sub>
 	<other foo="barbaz">
 	  <subsub foo="oof">contents subsub other</subsub>
 	</other>
