@@ -203,7 +203,20 @@ func returnIsNameTFAttr(name string) testfuncAttributes {
 // An Item can hold anything such as a number, a string or a node.
 type Item interface{}
 
-// type compareFunc func(interface{}, interface{}) (bool, error)
+func itemStringvalue(itm Item) string {
+	var ret string
+	switch t := itm.(type) {
+	case float64:
+		ret = fmt.Sprintf("%f", t)
+	case *goxml.Attribute:
+		ret = fmt.Sprintf(t.Value)
+	case *goxml.Element:
+		ret = fmt.Sprintf(t.Stringvalue())
+	default:
+		ret = fmt.Sprintf("%s", t)
+	}
+	return ret
+}
 
 // A Sequence is a list of Items
 type Sequence []Item
@@ -221,16 +234,7 @@ func (s Sequence) String() string {
 func (s Sequence) stringvalue() string {
 	var sb strings.Builder
 	for _, itm := range s {
-		switch t := itm.(type) {
-		case float64:
-			fmt.Fprintf(&sb, "%f", t)
-		case *goxml.Attribute:
-			fmt.Fprintf(&sb, t.Value)
-		case *goxml.Element:
-			fmt.Fprintf(&sb, t.Stringvalue())
-		default:
-			fmt.Fprintf(&sb, "%s", t)
-		}
+		sb.WriteString(itemStringvalue(itm))
 	}
 	return sb.String()
 }
