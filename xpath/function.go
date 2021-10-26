@@ -271,22 +271,31 @@ type Function struct {
 
 // RegisterFunction registers an XPath function
 func RegisterFunction(f *Function) {
-	xpathfunctions[f.Name] = f
+	xpathfunctions[f.Namespace+" "+f.Name] = f
 }
 
-func getfunction(name string) *Function {
-	// todo: namespace handling etc.
-	return xpathfunctions[name]
-}
-
-func hasFunction(name string) bool {
-	_, ok := xpathfunctions[name]
-	return ok
+func getfunction(namespace, name string) *Function {
+	return xpathfunctions[namespace+" "+name]
 }
 
 func callFunction(name string, arguments []Sequence, ctx *Context) (Sequence, error) {
-	fn := getfunction(name)
+	parts := strings.Split(name, ":")
+	var ns string
+	var ok bool
+	if len(parts) == 2 {
+		if ns, ok = ctx.namespaces[parts[0]]; ok {
+			name = parts[1]
+		} else {
+			return nil, fmt.Errorf("Could not find namespace for prefix %q", parts[0])
+		}
+	} else {
+		ns = fnNS
+	}
 
+	fn := getfunction(ns, name)
+	if fn == nil {
+		return nil, fmt.Errorf("Could not find function %q in namespace %q", name, ns)
+	}
 	if min := fn.MinArg; min > 0 {
 		if len(arguments) < min {
 			return nil, fmt.Errorf("too few arguments in function call (%q), min: %d", fn.Name, fn.MinArg)

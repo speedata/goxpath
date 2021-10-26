@@ -12,9 +12,10 @@ import (
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
 
-// Context is needed for variables and XML navigation.
+// Context is needed for variables, namespaces and XML navigation.
 type Context struct {
 	vars         map[string]Sequence
+	namespaces   map[string]string
 	context      Sequence
 	ctxPositions []int
 	ctxLengths   []int
@@ -26,10 +27,11 @@ type Context struct {
 // NewContext returns a context from the xml document
 func NewContext(doc *goxml.XMLDocument) *Context {
 	ctx := &Context{
-		xmldoc: doc,
-		vars:   make(map[string]Sequence),
+		xmldoc:     doc,
+		vars:       make(map[string]Sequence),
+		namespaces: make(map[string]string),
 	}
-
+	ctx.namespaces["fn"] = fnNS
 	return ctx
 }
 
@@ -1426,9 +1428,6 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 	functionName := functionNameToken.Value.(string)
-	if !hasFunction(functionName) {
-		return nil, fmt.Errorf("function %q not defined", functionName)
-	}
 
 	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
