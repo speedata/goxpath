@@ -715,7 +715,7 @@ func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 	for {
 		ef, err = parseAdditiveExpr(tl)
 		if err != nil {
-			leaveStep(tl, "11 parseRangeExpr")
+			leaveStep(tl, "11 parseRangeExpr (err)")
 			return nil, err
 		}
 		efs = append(efs, ef)
@@ -1052,7 +1052,7 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 		}
 	}
 	if len(efs) == 1 {
-		leaveStep(tl, "26 parseRelativePathExpr")
+		leaveStep(tl, "26 parseRelativePathExpr (1)")
 		return efs[0], nil // just a simple StepExpr
 	}
 
@@ -1071,6 +1071,7 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 				}
 				retseq = append(retseq, seq...)
 			}
+			// ctx.context = retseq
 		}
 
 		return retseq, nil
@@ -1121,6 +1122,7 @@ func parseAxisStep(tl *tokenlist) (evalFunc, error) {
 			tl.read()
 			predicate, err := parseExpr(tl)
 			if err != nil {
+				leaveStep(tl, "28 parseAxisStep (err)")
 				return nil, err
 			}
 			err = tl.skipType(TokCloseBracket)
@@ -1252,6 +1254,8 @@ func parseWildCard(tl *tokenlist) (evalFunc, error) {
 				}
 
 			}
+		} else {
+			tl.unread()
 		}
 	} else {
 		tl.unread()
@@ -1291,7 +1295,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 				ctx.ctxLengths = nil
 				return ctx.Filter(predicate)
 			}
-			leaveStep(tl, "38 parseFilterExpr")
+			leaveStep(tl, "38 parseFilterExpr (p)")
 			return ff, nil
 		}
 		break
@@ -1348,6 +1352,13 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		leaveStep(tl, "41 parsePrimaryExpr")
 		return ef, nil
 	}
+	if nexttok.Typ == TokOperator && nexttok.Value.(string) == "." {
+		ef = func(ctx *Context) (Sequence, error) {
+			return ctx.context, nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
 
 	// FunctionCall
 	if tl.nexttokIsTyp(TokOpenParen) {
@@ -1356,7 +1367,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		leaveStep(tl, "41 parsePrimaryExpr")
+		leaveStep(tl, "41 parsePrimaryExpr (fc)")
 		return ef, nil
 	}
 	tl.unread()
@@ -1412,8 +1423,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		ef = func(ctx *Context) (Sequence, error) {
 			return callFunction(functionName, []Sequence{}, ctx)
 		}
-		leaveStep(tl, "48 parseFunctionCall")
-
+		leaveStep(tl, "48 parseFunctionCall (a)")
 		return ef, nil
 	}
 

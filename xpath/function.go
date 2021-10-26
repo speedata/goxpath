@@ -76,6 +76,9 @@ func fnLocalName(ctx *Context, args []Sequence) (Sequence, error) {
 	if elt, ok := arg[0].(*goxml.Element); ok {
 		return Sequence{elt.Name}, nil
 	}
+	if attr, ok := arg[0].(*goxml.Attribute); ok {
+		return Sequence{attr.Name}, nil
+	}
 	return Sequence{""}, nil
 }
 

@@ -308,9 +308,26 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 		if err != nil {
 			break
 		}
-		if '0' <= r && r <= '9' || r == '.' {
+		if '0' <= r && r <= '9' {
 			sr.UnreadRune()
 			tokens = append(tokens, token{getNum(sr), TokNumber})
+		} else if r == '.' {
+			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{".", TokOperator})
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if '0' <= nextRune && nextRune <= '9' {
+				sr.UnreadRune()
+				sr.UnreadRune()
+				tokens = append(tokens, token{getNum(sr), TokNumber})
+			} else {
+				sr.UnreadRune()
+				tokens = append(tokens, token{".", TokOperator})
+			}
 		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '|' || r == '=' {
 			tokens = append(tokens, token{string(r), TokOperator})
 		} else if r == ',' {

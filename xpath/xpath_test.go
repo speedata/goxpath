@@ -157,7 +157,7 @@ func TestEval(t *testing.T) {
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
-	<sub foo="bar">sub2</sub>
+	<sub foo="bar" attr="baz">sub2</sub>
 	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar"></subsub></sub>
 	<other foo="barbaz">
 	  <subsub foo="oof">contents subsub other</subsub>
