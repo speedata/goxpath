@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/speedata/goxml"
 )
 
 var xpathfunctions map[string]*Function
@@ -43,12 +45,38 @@ func fnCount(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{len(seq)}, nil
 }
 
+func fnEmpty(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{len(args[0]) == 0}, nil
+}
+
 func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{false}, nil
 }
 
+func fnFloor(ctx *Context, args []Sequence) (Sequence, error) {
+	seq := args[0]
+	itm, err := numberValue(seq)
+	return Sequence{math.Floor(itm)}, err
+}
+
 func fnLast(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{ctx.size}, nil
+}
+
+func fnLocalName(ctx *Context, args []Sequence) (Sequence, error) {
+	var arg Sequence
+	if len(args) == 0 {
+		arg = ctx.context
+	} else {
+		arg = args[0]
+	}
+	if len(arg) == 0 {
+		return Sequence{""}, nil
+	}
+	if elt, ok := arg[0].(*goxml.Element); ok {
+		return Sequence{elt.Name}, nil
+	}
+	return Sequence{""}, nil
 }
 
 func fnNot(ctx *Context, args []Sequence) (Sequence, error) {
@@ -90,8 +118,11 @@ func init() {
 	RegisterFunction(&Function{Name: "ceiling", Namespace: fnNS, F: fnCeiling, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
 	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "empty", Namespace: fnNS, F: fnEmpty, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
+	RegisterFunction(&Function{Name: "floor", Namespace: fnNS, F: fnFloor, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "last", Namespace: fnNS, F: fnLast})
+	RegisterFunction(&Function{Name: "local-name", Namespace: fnNS, F: fnLocalName, MinArg: 0, MaxArg: 1})
 	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
