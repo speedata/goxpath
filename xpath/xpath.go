@@ -152,11 +152,14 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		}
 		return seq, nil
 	}
-
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
 		ctx.pos = positions[i]
-		ctx.size = lengths[i]
+		if len(lengths) > i {
+			ctx.size = lengths[i]
+		} else {
+			ctx.size = 1
+		}
 		predicate, err := filter(ctx)
 		if err != nil {
 			return nil, err
@@ -223,6 +226,8 @@ func (s Sequence) stringvalue() string {
 			fmt.Fprintf(&sb, "%f", t)
 		case *goxml.Attribute:
 			fmt.Fprintf(&sb, t.Value)
+		case *goxml.Element:
+			fmt.Fprintf(&sb, t.Stringvalue())
 		default:
 			fmt.Fprintf(&sb, "%s", t)
 		}
@@ -1071,7 +1076,10 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 				}
 				retseq = append(retseq, seq...)
 			}
-			// ctx.context = retseq
+			ctx.context = ctx.context[:0]
+			for _, itm := range retseq {
+				ctx.context = append(ctx.context, itm)
+			}
 		}
 
 		return retseq, nil

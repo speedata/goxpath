@@ -97,6 +97,9 @@ func TestEval(t *testing.T) {
 		{`(1,2)[false()]`, Sequence{}},
 		{`( (),2 )[1]`, Sequence{2.0}},
 		{`( (),2 )[position() = 1]`, Sequence{2.0}},
+		{`for $i in /root/other/@*[1] return string($i) `, Sequence{"barbaz", "other2"}},
+		{`string(/root/sub[position() mod 2 = 0]/@foo)`, Sequence{"bar"}},
+		{`string(/root/sub[last()]/@self)`, Sequence{"sub3"}},
 		{`abs(2.0)`, Sequence{2.0}},
 		{`abs(- 2)`, Sequence{2.0}},
 		{`abs( -3.7 )`, Sequence{3.7}},
@@ -144,21 +147,21 @@ func TestEval(t *testing.T) {
 		{`floor(-8.2e0 )`, Sequence{-9.0}},
 		{`floor( -0.5e0 )`, Sequence{-1.0}},
 		{`string(floor('xxx' ))`, Sequence{"NaN"}},
+		{`string(/root/sub[last()])`, Sequence{"contents sub3subsub"}},
 		{`/root/local-name()`, Sequence{"root"}},
 		{`local-name(/root)`, Sequence{"root"}},
 		{`local-name(/)`, Sequence{""}},
 		{`/local-name()`, Sequence{""}},
+		{`/root/sub/@*[. = 'baz']/local-name()`, Sequence{"foo", "attr"}},
 		{`not( 3 < 6 )`, Sequence{false}},
 		{`not( 6 < 3 )`, Sequence{true}},
 		{`not( true() )`, Sequence{false}},
-		{`for $i in /root/other/@*[1] return string($i) `, Sequence{"barbaz", "other2"}},
-		{`string(/root/sub[position() mod 2 = 0]/@foo)`, Sequence{"bar"}},
-		{`string(/root/sub[last()]/@self)`, Sequence{"sub3"}},
+		{`/root/other/string()`, Sequence{"\n\t  contents subsub other\n\t", "\n\t  contents subsub other2\n\t"}},
 	}
 	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
 	<sub foo="bar" attr="baz">sub2</sub>
-	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar"></subsub></sub>
+	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar">subsub</subsub></sub>
 	<other foo="barbaz">
 	  <subsub foo="oof">contents subsub other</subsub>
 	</other>
@@ -200,7 +203,7 @@ func TestEval(t *testing.T) {
 		}
 		for i, itm := range seq {
 			if itm != td.result[i] {
-				t.Errorf("seq[%d] = %v, want %v. test: %s", i, itm, td.result[i], td.input)
+				t.Errorf("seq[%d] = %#v, want %v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
 	}
