@@ -233,7 +233,8 @@ func (s Sequence) String() string {
 	return sb.String()
 }
 
-func (s Sequence) stringvalue() string {
+// Stringvalue returns the concatenation of the string value of each item.
+func (s Sequence) Stringvalue() string {
 	var sb strings.Builder
 	for _, itm := range s {
 		sb.WriteString(itemStringvalue(itm))
@@ -1486,12 +1487,12 @@ func parseXPath(tl *tokenlist) (evalFunc, error) {
 
 // Parser contains all necessary references to the parser
 type Parser struct {
-	ctx *Context
+	Ctx *Context
 }
 
 // SetVariable is used to set a variable name.
 func (xp *Parser) SetVariable(name string, value Sequence) {
-	xp.ctx.vars[name] = value
+	xp.Ctx.vars[name] = value
 }
 
 // Evaluate evaluates an xpath expression
@@ -1505,7 +1506,7 @@ func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
 		return nil, err
 	}
 
-	return evaler(xp.ctx)
+	return evaler(xp.Ctx)
 }
 
 // NewParser returns a context to be filled
@@ -1517,6 +1518,6 @@ func NewParser(r io.Reader) (*Parser, error) {
 		return nil, err
 	}
 
-	xp.ctx = NewContext(doc)
+	xp.Ctx = NewContext(doc)
 	return xp, nil
 }

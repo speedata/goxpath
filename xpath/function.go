@@ -41,7 +41,7 @@ func fnConcat(ctx *Context, args []Sequence) (Sequence, error) {
 	var str []string
 
 	for _, seq := range args {
-		str = append(str, seq.stringvalue())
+		str = append(str, seq.Stringvalue())
 	}
 	return Sequence{strings.Join(str, "")}, nil
 }
@@ -185,7 +185,7 @@ func fnString(ctx *Context, args []Sequence) (Sequence, error) {
 	} else {
 		arg = args[0]
 	}
-	return Sequence{arg.stringvalue()}, nil
+	return Sequence{arg.Stringvalue()}, nil
 }
 
 func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {

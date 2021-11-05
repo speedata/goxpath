@@ -413,7 +413,7 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 		} else if r == ')' {
 			tokens = append(tokens, token{r, TokCloseParen})
 		} else {
-			fmt.Printf("%q\n", string(r))
+			return nil, fmt.Errorf("Invalid char for xpath expression %q", string(r))
 		}
 	}
 	tl := tokenlist{pos: 0, toks: tokens}
