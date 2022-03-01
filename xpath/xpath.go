@@ -214,6 +214,12 @@ func itemStringvalue(itm Item) string {
 		ret = fmt.Sprintf(t.Value)
 	case *goxml.Element:
 		ret = fmt.Sprintf(t.Stringvalue())
+	case []goxml.XMLNode:
+		var str strings.Builder
+		for _, n := range t {
+			str.WriteString(itemStringvalue(n))
+		}
+		ret = str.String()
 	default:
 		ret = fmt.Sprintf("%s", t)
 	}
