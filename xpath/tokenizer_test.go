@@ -44,7 +44,6 @@ func TestGetQName(t *testing.T) {
 		if got, expected := res, td.output; got != expected {
 			t.Errorf("getWord(%s) = %s, want %s", td.input, res, expected)
 		}
-
 	}
 }
 
@@ -66,6 +65,31 @@ func TestGetDelimitedString(t *testing.T) {
 		}
 		if got, expected := res, td.output; got != expected {
 			t.Errorf("getDelimitedString(%s) = %s, want %s", td.input, res, expected)
+		}
+	}
+}
+func TestGetAxis(t *testing.T) {
+	testdata := []struct {
+		input  string
+		output []token
+	}{
+		{`child::sub`, []token{{"child", TokDoubleColon}, {"sub", TokQName}}},
+	}
+	for _, td := range testdata {
+		toklist, err := stringToTokenlist(td.input)
+		if err != nil {
+			t.Error(err)
+		}
+		toks := toklist.toks
+		if len(toks) != len(td.output) {
+			t.Errorf("len(toks) = %d (%v), want %d (%v)", len(toks), toks, len(td.output), td.output)
+		} else {
+			for i, tok := range toks {
+				expected := td.output[i]
+				if tok.Typ != expected.Typ || tok.Value != expected.Value {
+					t.Errorf("tok[%d] = %v, want %v", i, tok, expected)
+				}
+			}
 		}
 	}
 }
@@ -108,8 +132,6 @@ func TestOperator(t *testing.T) {
 					t.Errorf("tok[%d] = %v, want %v", i, tok, expected)
 				}
 			}
-
 		}
 	}
-
 }

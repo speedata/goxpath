@@ -56,35 +56,73 @@ func (ctx *Context) Root() (Sequence, error) {
 	return ctx.context, err
 }
 
+type testFunc func(Item) bool
 type testfuncChildren func(*goxml.Element) bool
 type testfuncAttributes func(*goxml.Attribute) bool
 
-// Child returns all children of the current node that satisfy the testfunc
-func (ctx *Context) Child(tf testfuncChildren) (Sequence, error) {
+// Current returns all elements in the context that satisfy the testfunc.
+func (ctx *Context) Current(tf testfuncChildren) (Sequence, error) {
 	var seq Sequence
 	ctx.ctxPositions = []int{}
 	ctx.ctxLengths = []int{}
+	pos := 0
+	l := 0
 	for _, n := range ctx.context {
-		if node, ok := n.(goxml.XMLNode); ok {
-			pos := 0
-			l := 0
-			for _, cld := range node.Children() {
-				if celt, ok := cld.(*goxml.Element); ok {
-					if tf(celt) {
-						pos++
-						l++
-						ctx.ctxPositions = append(ctx.ctxPositions, pos)
-						seq = append(seq, celt)
-					}
-				}
-			}
-			for i := 0; i < l; i++ {
-				ctx.ctxLengths = append(ctx.ctxLengths, l)
+		if elt, ok := n.(*goxml.Element); ok {
+			if tf(elt) {
+				pos++
+				l++
+				ctx.ctxPositions = append(ctx.ctxPositions, pos)
+				seq = append(seq, n)
 			}
 		}
 	}
+	for i := 0; i < l; i++ {
+		ctx.ctxLengths = append(ctx.ctxLengths, l)
+	}
+
 	ctx.context = seq
 	return seq, nil
+}
+
+func (ctx *Context) childAxis() error {
+	var seq Sequence
+	for _, n := range ctx.context {
+		switch t := n.(type) {
+		case *goxml.XMLDocument:
+			for _, cld := range t.Children() {
+				seq = append(seq, cld)
+			}
+		case *goxml.Element:
+			for _, cld := range t.Children() {
+				seq = append(seq, cld)
+			}
+		case goxml.CharData:
+			seq = append(seq, t)
+		default:
+			panic(fmt.Sprintf("childAxis nyi %T", t))
+		}
+	}
+	ctx.context = seq
+	return nil
+}
+
+func (ctx *Context) attributeAxis() error {
+	var seq Sequence
+	for _, n := range ctx.context {
+		switch t := n.(type) {
+		case *goxml.Element:
+			for _, attr := range t.Attributes() {
+				seq = append(seq, attr)
+			}
+		case goxml.CharData:
+			// ignore
+		default:
+			panic(fmt.Sprintf("nyi %T", t))
+		}
+	}
+	ctx.context = seq
+	return nil
 }
 
 // Attributes returns all attributes of the current node that satisfy the testfunc
@@ -92,14 +130,10 @@ func (ctx *Context) Attributes(tf testfuncAttributes) (Sequence, error) {
 	var seq Sequence
 	ctx.ctxPositions = []int{}
 	for _, n := range ctx.context {
-		if node, ok := n.(goxml.XMLNode); ok {
-			if elt, ok := node.(*goxml.Element); ok {
-				for _, attr := range elt.Attributes() {
-					if tf(attr) {
-						ctx.ctxPositions = append(ctx.ctxPositions, 1)
-						seq = append(seq, attr)
-					}
-				}
+		if attr, ok := n.(*goxml.Attribute); ok {
+			if tf(attr) {
+				ctx.ctxPositions = append(ctx.ctxPositions, 1)
+				seq = append(seq, attr)
 			}
 		}
 	}
@@ -129,8 +163,6 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	}
 
 	copyContext := ctx.context
-	ctx.size = lengths[0]
-
 	predicate, err := filter(ctx)
 	if err != nil {
 		return nil, err
@@ -547,6 +579,7 @@ func parseForExpr(tl *tokenlist) (evalFunc, error) {
 		for _, itm := range SimpleForClauseSeq {
 			// TODO: save variable value and restore afterwards
 			ctx.vars[varname] = Sequence{itm}
+			ctx.context = Sequence{itm}
 			seq, err := evalseq(ctx)
 			if err != nil {
 				return nil, err
@@ -747,6 +780,7 @@ func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 		leaveStep(tl, "11 parseRangeExpr")
 		return efs[0], nil
 	}
+
 	retf := func(ctx *Context) (Sequence, error) {
 		lhs, err := efs[0](ctx)
 		if err != nil {
@@ -1167,27 +1201,81 @@ func parseAxisStep(tl *tokenlist) (evalFunc, error) {
 	return ef, nil
 }
 
+type axis int
+
+const (
+	axisChild axis = iota
+	axisAttribute
+)
+
+func (a axis) String() string {
+	switch a {
+	case axisChild:
+		return "child"
+	case axisAttribute:
+		return "attribute"
+	}
+	return ""
+}
+
 // [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
 // [31] AbbrevForwardStep ::= "@"? NodeTest
 func parseForwardStep(tl *tokenlist) (evalFunc, error) {
-	enterStep(tl, " 29 parseForwardStep")
-	var ef evalFunc
+	enterStep(tl, "29 parseForwardStep")
 	var err error
 
+	stepAxis := axisChild
+	if tl.nexttokIsTyp(TokDoubleColon) {
+		nexttok, err := tl.read()
+		if err != nil {
+			return nil, err
+		}
+		switch nexttok.Value.(string) {
+		case "child":
+			stepAxis = axisChild
+		}
+	}
+
 	if tl.nexttokIsValue("@") {
-		tl.read()
+		tl.read() // @
 		tl.attributeMode = true
+		stepAxis = axisAttribute
 	} else {
 		tl.attributeMode = false
 	}
-
-	if ef, err = parseNodeTest(tl); err != nil {
+	var tf testFunc
+	if tf, err = parseNodeTest(tl); err != nil {
 		leaveStep(tl, "29 parseForwardStep (err)")
 		return nil, err
 	}
+	if tf == nil {
+		return nil, nil
+	}
+
+	ret := func(ctx *Context) (Sequence, error) {
+		var ret Sequence
+		switch stepAxis {
+		case axisChild:
+			ctx.childAxis()
+		case axisAttribute:
+			ctx.attributeAxis()
+		default:
+			panic("unknown axis, nyi")
+		}
+		copyContext := ctx.context
+		for _, itm := range copyContext {
+			if tf(itm) {
+				ret = append(ret, itm)
+			}
+		}
+		ctx.context = ret
+		ctx.size = len(ret)
+
+		return ret, nil
+	}
 
 	leaveStep(tl, "29 parseForwardStep")
-	return ef, nil
+	return ret, nil
 }
 
 // [30] ForwardAxis ::= ("child" "::") | ("descendant" "::")| ("attribute" "::")| ("self" "::")| ("descendant-or-self" "::")| ("following-sibling" "::")| ("following" "::")| ("namespace" "::")
@@ -1195,24 +1283,47 @@ func parseForwardStep(tl *tokenlist) (evalFunc, error) {
 // [34] AbbrevReverseStep ::= ".."
 // [33] ReverseAxis ::= ("parent" "::") | ("ancestor" "::") | ("preceding-sibling" "::") | ("preceding" "::") | ("ancestor-or-self" "::")
 // [35] NodeTest ::= KindTest | NameTest
-func parseNodeTest(tl *tokenlist) (evalFunc, error) {
+func parseNodeTest(tl *tokenlist) (testFunc, error) {
 	enterStep(tl, "35 parseNodeTest")
-	var ef evalFunc
+	var tf testFunc
+	if str, found := tl.readNexttokIfIsOneOfValue([]string{"element", "node"}); found {
+		tl.read()
+		tl.read()
+		switch str {
+		case "element":
+			tf = func(itm Item) bool {
+				if _, ok := itm.(*goxml.Element); ok {
+					return true
+				}
+				return false
+
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return tf, nil
+		case "node":
+			tf := func(itm Item) bool {
+				return true
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return tf, nil
+		}
+
+	}
 	var err error
-	if ef, err = parseNameTest(tl); err != nil {
+	if tf, err = parseNameTest(tl); err != nil {
 		leaveStep(tl, "35 parseNodeTest (err)")
 		return nil, err
 	}
 
 	leaveStep(tl, "35 parseNodeTest")
-	return ef, nil
+	return tf, nil
 }
 
 // [36] NameTest ::= QName | Wildcard
-func parseNameTest(tl *tokenlist) (evalFunc, error) {
+func parseNameTest(tl *tokenlist) (testFunc, error) {
 	enterStep(tl, "36 parseNameTest")
-	var ef evalFunc
-	var err error
+	var tf testFunc
+
 	if tl.nexttokIsTyp(TokQName) {
 		n, err := tl.read()
 		if err != nil {
@@ -1220,37 +1331,38 @@ func parseNameTest(tl *tokenlist) (evalFunc, error) {
 			return nil, err
 		}
 		if tl.attributeMode {
-			ef = func(ctx *Context) (Sequence, error) {
-				ctx.Attributes(returnIsNameTFAttr(n.Value.(string)))
-				return ctx.context, nil
+			tf = func(itm Item) bool {
+				if attr, ok := itm.(*goxml.Attribute); ok {
+					return attr.Name == n.Value.(string)
+				}
+				return false
 			}
 		} else {
-			ef = func(ctx *Context) (Sequence, error) {
-				ctx.Child(returnIsNameTF(n.Value.(string)))
-				ctx.size = len(ctx.context)
-				return ctx.context, nil
+			tf = func(itm Item) bool {
+				if elt, ok := itm.(*goxml.Element); ok {
+					return elt.Name == n.Value.(string)
+				}
+				return false
 			}
 		}
 
 		leaveStep(tl, "36 parseNameTest")
-		return ef, nil
+		return tf, nil
 	}
-	// leaveStep(tl, "36 parseNameTest (err)")
-	// return nil, fmt.Errorf("nametest failed")
-
-	ef, err = parseWildCard(tl)
+	var err error
+	tf, err = parseWildCard(tl)
 	if err != nil {
 		leaveStep(tl, "36 parseNameTest (err)")
 		return nil, err
 	}
 	leaveStep(tl, "36 parseNameTest")
-	return ef, nil
+	return tf, nil
 }
 
 // [37] Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
-func parseWildCard(tl *tokenlist) (evalFunc, error) {
+func parseWildCard(tl *tokenlist) (testFunc, error) {
 	enterStep(tl, "37 parseWildCard")
-	var ef evalFunc
+	var tf testFunc
 	var err error
 	var strTok *token
 	if strTok, err = tl.read(); err != nil {
@@ -1261,20 +1373,21 @@ func parseWildCard(tl *tokenlist) (evalFunc, error) {
 	if str, ok := strTok.Value.(string); ok {
 		if str == "*" || strings.HasPrefix(str, "*:") || strings.HasSuffix(str, ":*") {
 			if tl.attributeMode {
-				ef = func(ctx *Context) (Sequence, error) {
-					ctx.Attributes(returnIsNameTFAttr(str))
-					return ctx.context, nil
+				tf = func(itm Item) bool {
+					if _, ok := itm.(*goxml.Attribute); ok {
+						return true
+					}
+					return false
 				}
-
 			} else {
-				ef = func(ctx *Context) (Sequence, error) {
-					ctx.Child(returnIsNameTF(str))
-					// necessary?
-					ctx.size = len(ctx.context)
-					return ctx.context, nil
+				tf = func(itm Item) bool {
+					if _, ok := itm.(*goxml.Element); ok {
+						return true
+					}
+					return false
 				}
-
 			}
+
 		} else {
 			tl.unread()
 		}
@@ -1282,7 +1395,7 @@ func parseWildCard(tl *tokenlist) (evalFunc, error) {
 		tl.unread()
 	}
 	leaveStep(tl, "37 parseWildCard")
-	return ef, nil
+	return tf, nil
 }
 
 // [38] FilterExpr ::= PrimaryExpr PredicateList
@@ -1314,6 +1427,7 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 				}
 				ctx.ctxPositions = nil
 				ctx.ctxLengths = nil
+
 				return ctx.Filter(predicate)
 			}
 			leaveStep(tl, "38 parseFilterExpr (p)")
@@ -1386,6 +1500,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 		tl.unread() // function name
 		ef, err := parseFunctionCall(tl)
 		if err != nil {
+			leaveStep(tl, "41 parsePrimaryExpr (err)")
 			return nil, err
 		}
 		leaveStep(tl, "41 parsePrimaryExpr (fc)")
@@ -1434,12 +1549,16 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	if err = tl.skipType(TokOpenParen); err != nil {
 		return nil, err
 	}
-	functionName := functionNameToken.Value.(string)
-
+	fn := functionNameToken.Value.(string)
+	if fn == "element" || fn == "node" {
+		tl.unread()
+		tl.unread()
+		return nil, nil
+	}
 	if tl.nexttokIsTyp(TokCloseParen) {
 		tl.read()
 		ef = func(ctx *Context) (Sequence, error) {
-			return callFunction(functionName, []Sequence{}, ctx)
+			return callFunction(fn, []Sequence{}, ctx)
 		}
 		leaveStep(tl, "48 parseFunctionCall (a)")
 		return ef, nil
@@ -1474,7 +1593,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 			}
 			arguments = append(arguments, seq)
 		}
-		return callFunction(functionName, arguments, ctx)
+		return callFunction(fn, arguments, ctx)
 	}
 
 	leaveStep(tl, "48 parseFunctionCall")

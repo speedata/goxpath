@@ -32,6 +32,9 @@ const (
 	TokQName
 	// TokComma represents a comma
 	TokComma
+	// TokDoubleColon represents a word with two colons a the end (axis for
+	// example)
+	TokDoubleColon
 )
 
 func (tt tokenType) String() string {
@@ -71,7 +74,8 @@ func (tok *token) isNCName() bool {
 	if tok.Typ != TokQName {
 		return false
 	}
-	return !strings.ContainsRune(tok.Value.(string), ':')
+	tokAsString := tok.Value.(string)
+	return !strings.ContainsRune(tokAsString, ':')
 }
 
 type tokens []token
@@ -123,6 +127,8 @@ func (tl *tokenlist) nexttokIsTyp(typ tokenType) bool {
 	return tok.Typ == typ
 }
 
+// nexttokIsValue looks at the next token and returns true if the value matches.
+// Does not move the pointer forward.
 func (tl *tokenlist) nexttokIsValue(val string) bool {
 	tok, err := tl.peek()
 	if err != nil {
@@ -170,6 +176,8 @@ func (tl *tokenlist) unread() error {
 	return nil
 }
 
+// skipType reads the next token and returns an error if the token type does not
+// match.
 func (tl *tokenlist) skipType(typ tokenType) error {
 	var val *token
 	var err error
@@ -219,6 +227,7 @@ func getQName(sr *strings.Reader) (string, error) {
 			word = append(word, r)
 		} else if r == ':' {
 			if hasColon {
+				sr.UnreadRune()
 				break
 			}
 			word = append(word, r)
@@ -355,6 +364,10 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			}
 		} else if r == '/' || r == ':' {
 			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{string(r), TokOperator})
+				break
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -382,7 +395,18 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, token{word, TokQName})
+			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{word, TokQName})
+				break
+			}
+			if nextRune == ':' {
+				tokens = append(tokens, token{strings.TrimSuffix(word, ":"), TokDoubleColon})
+			} else {
+				sr.UnreadRune()
+				tokens = append(tokens, token{word, TokQName})
+			}
+
 		} else if r == '\'' || r == '"' {
 			sr.UnreadRune()
 			str, err := getDelimitedString(sr)
