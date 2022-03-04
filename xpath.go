@@ -1,4 +1,4 @@
-package xpath
+package goxpath
 
 import (
 	"fmt"
@@ -33,6 +33,13 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	}
 	ctx.namespaces["fn"] = fnNS
 	return ctx
+}
+
+// SetContext sets the context sequence and returns the previous one.
+func (ctx *Context) SetContext(seq Sequence) Sequence {
+	oldCtx := ctx.context
+	ctx.context = seq
+	return oldCtx
 }
 
 // Document moves the node navigator to the document and retuns it
@@ -482,7 +489,7 @@ func parseExpr(tl *tokenlist) (evalFunc, error) {
 			return nil, err
 		}
 		efs = append(efs, ef)
-		if !tl.nexttokIsTyp(TokComma) {
+		if !tl.nexttokIsTyp(tokComma) {
 			break
 		}
 		tl.read() // comma
@@ -604,13 +611,13 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 	if nexttok, err = tl.read(); err != nil {
 		return nil, err
 	}
-	if nexttok.Typ != TokOpenParen {
+	if nexttok.Typ != tokOpenParen {
 		return nil, fmt.Errorf("open parenthesis expected, found %v", nexttok.Value)
 	}
 	if boolEval, err = parseExpr(tl); err != nil {
 		return nil, err
 	}
-	if err = tl.skipType(TokCloseParen); err != nil {
+	if err = tl.skipType(tokCloseParen); err != nil {
 		return nil, err
 	}
 	if err = tl.skipNCName("then"); err != nil {
@@ -921,15 +928,50 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 // [14] UnionExpr ::= IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*
 func parseUnionExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "14 parseUnionExpr")
-	var ef evalFunc
+	var efs []evalFunc
 
-	ef, err := parseIntersectExceptExpr(tl)
-	if err != nil {
-		return nil, err
+	for {
+		ef, err := parseIntersectExceptExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		efs = append(efs, ef)
+		if _, found := tl.readNexttokIfIsOneOfValue([]string{"union", "|"}); !found {
+			break
+		}
+
+	}
+	ret := func(ctx *Context) (Sequence, error) {
+		if len(efs) == 1 {
+			return efs[0](ctx)
+		}
+		var seq Sequence
+		for _, ef := range efs {
+			efSeq, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+			seq = append(seq, efSeq...)
+		}
+		var nodes goxml.SortByDocumentOrder
+		for _, itm := range seq {
+			if n, ok := itm.(goxml.XMLNode); ok {
+				nodes = append(nodes, n)
+			} else {
+				fmt.Printf("14: unknown type %T\n", itm)
+			}
+		}
+		// document order
+		nodes = nodes.SortAndEliminateDuplicates()
+		var retSeq Sequence
+		for _, itm := range nodes {
+			retSeq = append(retSeq, itm)
+		}
+		return retSeq, nil
 	}
 
 	leaveStep(tl, "14 parseUnionExpr")
-	return ef, nil
+	return ret, nil
 }
 
 // [15] IntersectExceptExpr  ::= InstanceofExpr ( ("intersect" | "except") InstanceofExpr )*
@@ -949,9 +991,52 @@ func parseIntersectExceptExpr(tl *tokenlist) (evalFunc, error) {
 func parseInstanceofExpr(tl *tokenlist) (evalFunc, error) {
 	enterStep(tl, "16 parseInstanceofExpr")
 	var ef evalFunc
+	var tf testFunc
 	ef, err := parseTreatExpr(tl)
 	if err != nil {
 		return nil, err
+	}
+
+	if tl.nexttokIsValue("instance") {
+		tl.read()
+		if !tl.nexttokIsValue("of") {
+			tl.unread()
+			leaveStep(tl, "16 parseInstanceofExpr")
+			return ef, nil
+		}
+		tl.read()
+		tf, err = parseSequenceType(tl)
+		if err != nil {
+			return nil, err
+		}
+		var oi string
+		oi, _ = tl.readNexttokIfIsOneOfValue([]string{"*", "+", "?"})
+		inOfExpr := func(ctx *Context) (Sequence, error) {
+			_, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			if oi == "" && len(ctx.context) != 1 {
+				return Sequence{false}, nil
+			}
+			if oi == "+" && len(ctx.context) < 1 {
+				return Sequence{false}, nil
+			}
+			if oi == "?" && len(ctx.context) > 1 {
+				return Sequence{false}, nil
+			}
+
+			for _, itm := range ctx.context {
+				if !tf(itm) {
+					return Sequence{false}, nil
+				}
+			}
+
+			return Sequence{true}, nil
+		}
+		leaveStep(tl, "16 parseInstanceofExpr")
+		return inOfExpr, nil
 	}
 
 	leaveStep(tl, "16 parseInstanceofExpr")
@@ -1173,14 +1258,14 @@ func parseAxisStep(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 	for {
-		if tl.nexttokIsTyp(TokOpenBracket) {
+		if tl.nexttokIsTyp(tokOpenBracket) {
 			tl.read()
 			predicate, err := parseExpr(tl)
 			if err != nil {
 				leaveStep(tl, "28 parseAxisStep (err)")
 				return nil, err
 			}
-			err = tl.skipType(TokCloseBracket)
+			err = tl.skipType(tokCloseBracket)
 			if err != nil {
 				return nil, err
 			}
@@ -1225,7 +1310,7 @@ func parseForwardStep(tl *tokenlist) (evalFunc, error) {
 	var err error
 
 	stepAxis := axisChild
-	if tl.nexttokIsTyp(TokDoubleColon) {
+	if tl.nexttokIsTyp(tokDoubleColon) {
 		nexttok, err := tl.read()
 		if err != nil {
 			return nil, err
@@ -1324,7 +1409,7 @@ func parseNameTest(tl *tokenlist) (testFunc, error) {
 	enterStep(tl, "36 parseNameTest")
 	var tf testFunc
 
-	if tl.nexttokIsTyp(TokQName) {
+	if tl.nexttokIsTyp(tokQName) {
 		n, err := tl.read()
 		if err != nil {
 			leaveStep(tl, "36 parseNameTest (err)")
@@ -1409,13 +1494,13 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 		return nil, err
 	}
 	for {
-		if tl.nexttokIsTyp(TokOpenBracket) {
+		if tl.nexttokIsTyp(tokOpenBracket) {
 			tl.read()
 			predicate, err := parseExpr(tl)
 			if err != nil {
 				return nil, err
 			}
-			err = tl.skipType(TokCloseBracket)
+			err = tl.skipType(tokCloseBracket)
 			if err != nil {
 				return nil, err
 			}
@@ -1452,7 +1537,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// StringLiteral
-	if nexttok.Typ == TokString {
+	if nexttok.Typ == tokString {
 		ef = func(ctx *Context) (Sequence, error) {
 			return Sequence{nexttok.Value.(string)}, nil
 		}
@@ -1461,7 +1546,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// NumericLiteral
-	if nexttok.Typ == TokNumber {
+	if nexttok.Typ == tokNumber {
 		ef = func(ctx *Context) (Sequence, error) {
 			return Sequence{nexttok.Value.(float64)}, nil
 		}
@@ -1470,7 +1555,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// ParenthesizedExpr
-	if nexttok.Typ == TokOpenParen {
+	if nexttok.Typ == tokOpenParen {
 		ef, err = parseParenthesizedExpr(tl)
 		if err != nil {
 			return nil, err
@@ -1480,14 +1565,14 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// VarRef
-	if nexttok.Typ == TokVarname {
+	if nexttok.Typ == tokVarname {
 		ef = func(ctx *Context) (Sequence, error) {
 			return ctx.vars[nexttok.Value.(string)], nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
 		return ef, nil
 	}
-	if nexttok.Typ == TokOperator && nexttok.Value.(string) == "." {
+	if nexttok.Typ == tokOperator && nexttok.Value.(string) == "." {
 		ef = func(ctx *Context) (Sequence, error) {
 			return ctx.context, nil
 		}
@@ -1496,7 +1581,7 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 	}
 
 	// FunctionCall
-	if tl.nexttokIsTyp(TokOpenParen) {
+	if tl.nexttokIsTyp(tokOpenParen) {
 		tl.unread() // function name
 		ef, err := parseFunctionCall(tl)
 		if err != nil {
@@ -1520,7 +1605,7 @@ func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = tl.skipType(TokCloseParen); err != nil {
+	if err = tl.skipType(tokCloseParen); err != nil {
 		return nil, err
 	}
 
@@ -1546,7 +1631,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = tl.skipType(TokOpenParen); err != nil {
+	if err = tl.skipType(tokOpenParen); err != nil {
 		return nil, err
 	}
 	fn := functionNameToken.Value.(string)
@@ -1555,7 +1640,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		tl.unread()
 		return nil, nil
 	}
-	if tl.nexttokIsTyp(TokCloseParen) {
+	if tl.nexttokIsTyp(tokCloseParen) {
 		tl.read()
 		ef = func(ctx *Context) (Sequence, error) {
 			return callFunction(fn, []Sequence{}, ctx)
@@ -1572,13 +1657,13 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 			return nil, err
 		}
 		efs = append(efs, es)
-		if !tl.nexttokIsTyp(TokComma) {
+		if !tl.nexttokIsTyp(tokComma) {
 			break
 		}
 		tl.read()
 	}
 
-	if err = tl.skipType(TokCloseParen); err != nil {
+	if err = tl.skipType(tokCloseParen); err != nil {
 		leaveStep(tl, "48 parseFunctionCall (err)")
 		return nil, fmt.Errorf("close paren expected")
 	}
@@ -1600,8 +1685,161 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 	return ef, nil
 }
 
-// [54] KindTest ::= DocumentTest| ElementTest| AttributeTest| SchemaElementTest| SchemaAttributeTest| PITest| CommentTest| TextTest| AnyKindTest
+// [50] SequenceType ::= ("empty-sequence" "(" ")")| (ItemType OccurrenceIndicator?)
+func parseSequenceType(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "50 parseSequenceType")
+	var tf testFunc
+	var err error
 
+	if tl.nexttokIsValue("empty-sequence") {
+		panic("nyi")
+	}
+	tf, err = parseItemType(tl)
+	if err != nil {
+		leaveStep(tl, "50 parseSequenceType (err)")
+		return nil, err
+	}
+
+	leaveStep(tl, "50 parseSequenceType")
+	return tf, nil
+}
+
+// [52] ItemType ::= KindTest | ("item" "(" ")") | AtomicType
+func parseItemType(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "52 parseItemType")
+	var tf testFunc
+	var err error
+
+	if tf, err = parseKindTest(tl); err != nil {
+		leaveStep(tl, "52 parseItemType (err)")
+		return nil, err
+	}
+
+	leaveStep(tl, "52 parseItemType")
+	return tf, nil
+}
+
+// [51] OccurrenceIndicator ::= "?" | "*" | "+"
+// [53] AtomicType ::= QName
+
+// [54] KindTest ::= DocumentTest| ElementTest| AttributeTest| SchemaElementTest| SchemaAttributeTest| PITest| CommentTest| TextTest| AnyKindTest
+func parseKindTest(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "54 parseKindTest")
+	var tf testFunc
+	var err error
+	if tf, err = parseDocumentTest(tl); err != nil {
+		leaveStep(tl, "54 parseKindTest (err)")
+		return nil, err
+	}
+	if tf != nil {
+		leaveStep(tl, "54 parseKindTest")
+		return tf, nil
+	}
+
+	if tf, err = parseElementTest(tl); err != nil {
+		leaveStep(tl, "54 parseKindTest (err)")
+		return nil, err
+	}
+	if tf != nil {
+		leaveStep(tl, "54 parseKindTest (elt)")
+		return tf, nil
+	}
+
+	if tf, err = parseAttributeTest(tl); err != nil {
+		leaveStep(tl, "54 parseKindTest (err)")
+		return nil, err
+	}
+	if tf != nil {
+		leaveStep(tl, "54 parseKindTest (elt)")
+		return tf, nil
+	}
+	leaveStep(tl, "54 parseKindTest")
+	return tf, nil
+}
+
+// [56] DocumentTest ::= "document-node" "(" (ElementTest | SchemaElementTest)? ")"
+func parseDocumentTest(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "56 parseDocumentTest")
+	var tf testFunc
+	// var err error
+	if _, ok := tl.readNexttokIfIsOneOfValue([]string{"document-node"}); !ok {
+		leaveStep(tl, "56 parseDocumentTest")
+		return nil, nil
+	}
+	tl.skipType(tokOpenParen)
+	// TODO: 64,66
+	tl.skipType(tokCloseParen)
+	leaveStep(tl, "56 parseDocumentTest")
+	return tf, nil
+}
+
+// [60] AttributeTest ::= "attribute" "(" (AttribNameOrWildcard ("," TypeName)?)? ")"
+func parseAttributeTest(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "60 parseAttributeTest")
+	var tf testFunc
+	if _, ok := tl.readNexttokIfIsOneOfValue([]string{"attribute"}); !ok {
+		leaveStep(tl, "60 parseAttributeTest")
+		return nil, nil
+	}
+	var err error
+	if err = tl.skipType(tokOpenParen); err != nil {
+		return nil, err
+	}
+	// TODO: 61,70
+	if err = tl.skipType(tokCloseParen); err != nil {
+		return nil, err
+	}
+	tf = func(itm Item) bool {
+		if _, ok := itm.(*goxml.Attribute); ok {
+			return true
+		}
+		return false
+	}
+
+	leaveStep(tl, "60 parseAttributeTest")
+	return tf, nil
+}
+
+// [64] ElementTest ::= "element" "(" (ElementNameOrWildcard ("," TypeName "?"?)?)? ")"
+func parseElementTest(tl *tokenlist) (testFunc, error) {
+	enterStep(tl, "64 parseElementTest")
+	var tf testFunc
+	if _, ok := tl.readNexttokIfIsOneOfValue([]string{"element"}); !ok {
+		leaveStep(tl, "64 parseElementTest")
+		return nil, nil
+	}
+	var err error
+	if err = tl.skipType(tokOpenParen); err != nil {
+		return nil, err
+	}
+	// TODO: 65,79
+	if err = tl.skipType(tokCloseParen); err != nil {
+		return nil, err
+	}
+	tf = func(itm Item) bool {
+		if _, ok := itm.(*goxml.Element); ok {
+			return true
+		}
+		return false
+	}
+	leaveStep(tl, "64 parseElementTest")
+	return tf, nil
+}
+
+// [66] SchemaElementTest ::= "schema-element" "(" ElementDeclaration ")"
+// [67] ElementDeclaration ::= ElementName
+
+// [62] SchemaAttributeTest ::= "schema-attribute" "(" AttributeDeclaration ")"
+// [63] AttributeDeclaration ::= AttributeName
+// [65] ElementNameOrWildcard ::= ElementName | "*"
+// [69] ElementName ::= QName
+// [61] AttribNameOrWildcard ::= AttributeName | "*"
+// [68] AttributeName ::= QName
+// [70] TypeName ::= QName
+// [59] PITest ::= "processing-instruction" "(" (NCName | StringLiteral)? ")"
+// [58] CommentTest ::= "comment" "(" ")"
+// [57] TextTest ::= "text" "(" ")"
+// [55] AnyKindTest ::= "node" "(" ")"
 func parseXPath(tl *tokenlist) (evalFunc, error) {
 	ef, err := parseExpr(tl)
 	if err != nil {

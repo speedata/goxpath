@@ -1,4 +1,4 @@
-package xpath
+package goxpath
 
 import (
 	"strings"
@@ -10,7 +10,7 @@ func TestNCName(t *testing.T) {
 		input  token
 		output bool
 	}{
-		{token{TokNumber, 1}, false},
+		{token{tokNumber, 1}, false},
 	}
 	for _, td := range testdata {
 		got := td.input.isNCName()
@@ -73,7 +73,7 @@ func TestGetAxis(t *testing.T) {
 		input  string
 		output []token
 	}{
-		{`child::sub`, []token{{"child", TokDoubleColon}, {"sub", TokQName}}},
+		{`child::sub`, []token{{"child", tokDoubleColon}, {"sub", tokQName}}},
 	}
 	for _, td := range testdata {
 		toklist, err := stringToTokenlist(td.input)
@@ -99,23 +99,23 @@ func TestOperator(t *testing.T) {
 		input  string
 		output []token
 	}{
-		{`< (:comment (:nested :) :) `, []token{{`<`, TokOperator}}},
-		{`"hello"`, []token{{"hello", TokString}}},
-		{`'hello'`, []token{{"hello", TokString}}},
-		{`< `, []token{{`<`, TokOperator}}},
-		{`<= `, []token{{`<=`, TokOperator}}},
-		{`> `, []token{{`>`, TokOperator}}},
-		{`>= `, []token{{`>=`, TokOperator}}},
-		{`!= `, []token{{`!=`, TokOperator}}},
-		{`<< `, []token{{`<<`, TokOperator}}},
-		{`>> `, []token{{`>>`, TokOperator}}},
-		{`/ `, []token{{`/`, TokOperator}}},
-		{`// `, []token{{`//`, TokOperator}}},
-		{`: `, []token{{`:`, TokOperator}}},
-		{`:: `, []token{{`::`, TokOperator}}},
-		{`.`, []token{{`.`, TokOperator}}},
-		{`(1,2)`, []token{{'(', TokOpenParen}, {1.0, TokNumber}, {`,`, TokComma}, {2.0, TokNumber}, {')', TokCloseParen}}},
-		{`$hello`, []token{{"hello", TokVarname}}},
+		{`< (:comment (:nested :) :) `, []token{{`<`, tokOperator}}},
+		{`"hello"`, []token{{"hello", tokString}}},
+		{`'hello'`, []token{{"hello", tokString}}},
+		{`< `, []token{{`<`, tokOperator}}},
+		{`<= `, []token{{`<=`, tokOperator}}},
+		{`> `, []token{{`>`, tokOperator}}},
+		{`>= `, []token{{`>=`, tokOperator}}},
+		{`!= `, []token{{`!=`, tokOperator}}},
+		{`<< `, []token{{`<<`, tokOperator}}},
+		{`>> `, []token{{`>>`, tokOperator}}},
+		{`/ `, []token{{`/`, tokOperator}}},
+		{`// `, []token{{`//`, tokOperator}}},
+		{`: `, []token{{`:`, tokOperator}}},
+		{`:: `, []token{{`::`, tokOperator}}},
+		{`.`, []token{{`.`, tokOperator}}},
+		{`(1,2)`, []token{{'(', tokOpenParen}, {1.0, tokNumber}, {`,`, tokComma}, {2.0, tokNumber}, {')', tokCloseParen}}},
+		{`$hello`, []token{{"hello", tokVarname}}},
 	}
 	for _, td := range testdata {
 		toklist, err := stringToTokenlist(td.input)

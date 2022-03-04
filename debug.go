@@ -1,4 +1,4 @@
-package xpath
+package goxpath
 
 import (
 	"fmt"

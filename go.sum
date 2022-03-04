@@ -1,2 +1,4 @@
-github.com/speedata/goxml v0.0.0-20211102133526-01b44237f426 h1:MLCL5DKlu9Ag6qT8h489DDfScb9dlW+M+6WfwrAWMo8=
-github.com/speedata/goxml v0.0.0-20211102133526-01b44237f426/go.mod h1:VkzYUyr9eWtgHFw9LzlZqgv7U+d+9+ldgNy7+BNMNdo=
+github.com/speedata/goxml v0.0.0-20220301131957-3fc2d5740a7b h1:SkKN5KFbtRyE6CYvKul4m/ipG0pXYGqvq7sfPS5ZZAU=
+github.com/speedata/goxml v0.0.0-20220301131957-3fc2d5740a7b/go.mod h1:VkzYUyr9eWtgHFw9LzlZqgv7U+d+9+ldgNy7+BNMNdo=
+github.com/speedata/goxml v0.0.0-20220304094847-e25a4c712d89 h1:zxChaL4RTqrK9JwTlfFW3UOTDBfz2yEg3s4vUYOFo78=
+github.com/speedata/goxml v0.0.0-20220304094847-e25a4c712d89/go.mod h1:VkzYUyr9eWtgHFw9LzlZqgv7U+d+9+ldgNy7+BNMNdo=

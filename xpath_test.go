@@ -1,4 +1,4 @@
-package xpath
+package goxpath
 
 import (
 	"math"
@@ -31,6 +31,15 @@ func TestEval(t *testing.T) {
 		input  string
 		result Sequence
 	}{
+		{`count(/root/other | /root/other)`, Sequence{2}},
+		{`/root/@zzz instance of attribute()+`, Sequence{false}},
+		{`/root/@foo instance of attribute()+`, Sequence{true}},
+		{`/root/sub instance of element()?`, Sequence{false}},
+		{`/root/sub[1] instance of element()?`, Sequence{true}},
+		{`/root/sub[1] instance of element()`, Sequence{true}},
+		{`/root/sub instance of element()`, Sequence{false}},
+		{`/root/sub instance of element()+`, Sequence{true}},
+		{`/root/sub instance of element()*`, Sequence{true}},
 		{`if ( false() ) then 'a' else 'b'`, Sequence{"b"}},
 		{`if ( true() ) then 'a' else 'b'`, Sequence{"a"}},
 		{`true()`, Sequence{true}},

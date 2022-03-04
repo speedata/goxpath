@@ -1,4 +1,4 @@
-package xpath
+package goxpath
 
 import (
 	"fmt"
@@ -10,56 +10,56 @@ import (
 type tokenType int
 
 const (
-	// TokAny contains any token.
-	TokAny tokenType = iota
-	// TokString contains any characters including whitespace.
-	TokString
-	// TokVarname represents a variable name.
-	TokVarname
-	// TokNumber represents a float64.
-	TokNumber
-	// TokOperator contains a single or double letter operator or path sepearator.
-	TokOperator
-	// TokOpenParen is an opening parenthesis (.
-	TokOpenParen
-	// TokCloseParen is a closing parenthesis ).
-	TokCloseParen
-	// TokOpenBracket is an opeing bracket [.
-	TokOpenBracket
-	// TokCloseBracket is a closing bracket ].
-	TokCloseBracket
-	// TokQName is a QName (which might contain one colon).
-	TokQName
-	// TokComma represents a comma
-	TokComma
-	// TokDoubleColon represents a word with two colons a the end (axis for
+	// tokAny contains any token.
+	tokAny tokenType = iota
+	// tokString contains any characters including whitespace.
+	tokString
+	// tokVarname represents a variable name.
+	tokVarname
+	// tokNumber represents a float64.
+	tokNumber
+	// tokOperator contains a single or double letter operator or path sepearator.
+	tokOperator
+	// tokOpenParen is an opening parenthesis (.
+	tokOpenParen
+	// tokCloseParen is a closing parenthesis ).
+	tokCloseParen
+	// tokOpenBracket is an opeing bracket [.
+	tokOpenBracket
+	// tokCloseBracket is a closing bracket ].
+	tokCloseBracket
+	// tokQName is a QName (which might contain one colon).
+	tokQName
+	// tokComma represents a comma
+	tokComma
+	// tokDoubleColon represents a word with two colons a the end (axis for
 	// example)
-	TokDoubleColon
+	tokDoubleColon
 )
 
 func (tt tokenType) String() string {
 	switch tt {
-	case TokAny:
+	case tokAny:
 		return "Any token"
-	case TokString:
+	case tokString:
 		return "string"
-	case TokVarname:
+	case tokVarname:
 		return "variable name"
-	case TokNumber:
+	case tokNumber:
 		return "number"
-	case TokOperator:
+	case tokOperator:
 		return "operator"
-	case TokOpenParen:
+	case tokOpenParen:
 		return "open paren"
-	case TokCloseParen:
+	case tokCloseParen:
 		return "close paren"
-	case TokOpenBracket:
+	case tokOpenBracket:
 		return "open bracket"
-	case TokCloseBracket:
+	case tokCloseBracket:
 		return "close bracket"
-	case TokQName:
+	case tokQName:
 		return "QName"
-	case TokComma:
+	case tokComma:
 		return "comma"
 	}
 	return "--"
@@ -71,7 +71,7 @@ type token struct {
 }
 
 func (tok *token) isNCName() bool {
-	if tok.Typ != TokQName {
+	if tok.Typ != tokQName {
 		return false
 	}
 	tokAsString := tok.Value.(string)
@@ -90,15 +90,15 @@ func (toks tokens) String() string {
 
 func (tok token) String() string {
 	switch tok.Typ {
-	case TokVarname:
+	case tokVarname:
 		return "$" + tok.Value.(string)
-	case TokOpenParen:
+	case tokOpenParen:
 		return "("
-	case TokCloseParen:
+	case tokCloseParen:
 		return ")"
-	case TokOpenBracket:
+	case tokOpenBracket:
 		return "["
-	case TokCloseBracket:
+	case tokCloseBracket:
 		return "]"
 	}
 
@@ -319,11 +319,11 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 		}
 		if '0' <= r && r <= '9' {
 			sr.UnreadRune()
-			tokens = append(tokens, token{getNum(sr), TokNumber})
+			tokens = append(tokens, token{getNum(sr), tokNumber})
 		} else if r == '.' {
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {
-				tokens = append(tokens, token{".", TokOperator})
+				tokens = append(tokens, token{".", tokOperator})
 				break
 			}
 			if err != nil {
@@ -332,24 +332,24 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			if '0' <= nextRune && nextRune <= '9' {
 				sr.UnreadRune()
 				sr.UnreadRune()
-				tokens = append(tokens, token{getNum(sr), TokNumber})
+				tokens = append(tokens, token{getNum(sr), tokNumber})
 			} else {
 				sr.UnreadRune()
-				tokens = append(tokens, token{".", TokOperator})
+				tokens = append(tokens, token{".", tokOperator})
 			}
 		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '|' || r == '=' {
-			tokens = append(tokens, token{string(r), TokOperator})
+			tokens = append(tokens, token{string(r), tokOperator})
 		} else if r == ',' {
-			tokens = append(tokens, token{string(r), TokComma})
+			tokens = append(tokens, token{string(r), tokComma})
 		} else if r == '>' || r == '<' {
 			nextRune, _, err := sr.ReadRune()
 			if err != nil {
 				return nil, err
 			}
 			if nextRune == '=' || nextRune == r {
-				tokens = append(tokens, token{string(r) + string(nextRune), TokOperator})
+				tokens = append(tokens, token{string(r) + string(nextRune), tokOperator})
 			} else {
-				tokens = append(tokens, token{string(r), TokOperator})
+				tokens = append(tokens, token{string(r), tokOperator})
 				sr.UnreadRune()
 			}
 		} else if r == '!' {
@@ -358,35 +358,35 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 				return nil, err
 			}
 			if nextRune == '=' {
-				tokens = append(tokens, token{"!=", TokOperator})
+				tokens = append(tokens, token{"!=", tokOperator})
 			} else {
 				return nil, fmt.Errorf("= expected after !, got %s", string(nextRune))
 			}
 		} else if r == '/' || r == ':' {
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {
-				tokens = append(tokens, token{string(r), TokOperator})
+				tokens = append(tokens, token{string(r), tokOperator})
 				break
 			}
 			if err != nil {
 				return nil, err
 			}
 			if nextRune == r {
-				tokens = append(tokens, token{string(r) + string(r), TokOperator})
+				tokens = append(tokens, token{string(r) + string(r), tokOperator})
 			} else {
-				tokens = append(tokens, token{string(r), TokOperator})
+				tokens = append(tokens, token{string(r), tokOperator})
 				sr.UnreadRune()
 			}
 		} else if r == '[' {
-			tokens = append(tokens, token{r, TokOpenBracket})
+			tokens = append(tokens, token{r, tokOpenBracket})
 		} else if r == ']' {
-			tokens = append(tokens, token{r, TokCloseBracket})
+			tokens = append(tokens, token{r, tokCloseBracket})
 		} else if r == '$' {
 			qname, err := getQName(sr)
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, token{qname, TokVarname})
+			tokens = append(tokens, token{qname, tokVarname})
 		} else if unicode.IsSpace(r) {
 			// ignore whitespace
 		} else if unicode.IsLetter(r) {
@@ -397,14 +397,14 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			}
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {
-				tokens = append(tokens, token{word, TokQName})
+				tokens = append(tokens, token{word, tokQName})
 				break
 			}
 			if nextRune == ':' {
-				tokens = append(tokens, token{strings.TrimSuffix(word, ":"), TokDoubleColon})
+				tokens = append(tokens, token{strings.TrimSuffix(word, ":"), tokDoubleColon})
 			} else {
 				sr.UnreadRune()
-				tokens = append(tokens, token{word, TokQName})
+				tokens = append(tokens, token{word, tokQName})
 			}
 
 		} else if r == '\'' || r == '"' {
@@ -413,7 +413,7 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, token{str, TokString})
+			tokens = append(tokens, token{str, tokString})
 		} else if r == '(' {
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {
@@ -432,10 +432,10 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 				// tokens = append(tokens, token{cmt, TokAny})
 			} else {
 				sr.UnreadRune()
-				tokens = append(tokens, token{r, TokOpenParen})
+				tokens = append(tokens, token{r, tokOpenParen})
 			}
 		} else if r == ')' {
-			tokens = append(tokens, token{r, TokCloseParen})
+			tokens = append(tokens, token{r, tokCloseParen})
 		} else {
 			return nil, fmt.Errorf("Invalid char for xpath expression %q", string(r))
 		}
