@@ -18,7 +18,7 @@ func init() {
 	doDebug = false
 }
 
-func enterStep(tl *tokenlist, step string) {
+func enterStep(tl *Tokenlist, step string) {
 	if doDebug {
 		peek, _ := tl.peek()
 		fmt.Println(strings.Repeat(indent, debugIndentLevel), ">>", step, peek)
@@ -26,7 +26,7 @@ func enterStep(tl *tokenlist, step string) {
 	}
 }
 
-func leaveStep(tl *tokenlist, step string) {
+func leaveStep(tl *Tokenlist, step string) {
 	if doDebug {
 		peek, _ := tl.peek()
 		debugIndentLevel--

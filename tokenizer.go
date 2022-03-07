@@ -113,13 +113,14 @@ func (tok token) String() string {
 	}
 }
 
-type tokenlist struct {
+// Tokenlist represents units of XPath language elements.
+type Tokenlist struct {
 	pos           int
 	toks          tokens
 	attributeMode bool // for Name Test
 }
 
-func (tl *tokenlist) nexttokIsTyp(typ tokenType) bool {
+func (tl *Tokenlist) nexttokIsTyp(typ tokenType) bool {
 	tok, err := tl.peek()
 	if err != nil {
 		return false
@@ -129,7 +130,7 @@ func (tl *tokenlist) nexttokIsTyp(typ tokenType) bool {
 
 // nexttokIsValue looks at the next token and returns true if the value matches.
 // Does not move the pointer forward.
-func (tl *tokenlist) nexttokIsValue(val string) bool {
+func (tl *Tokenlist) nexttokIsValue(val string) bool {
 	tok, err := tl.peek()
 	if err != nil {
 		return false
@@ -140,7 +141,7 @@ func (tl *tokenlist) nexttokIsValue(val string) bool {
 	return false
 }
 
-func (tl *tokenlist) readNexttokIfIsOneOfValue(val []string) (string, bool) {
+func (tl *Tokenlist) readNexttokIfIsOneOfValue(val []string) (string, bool) {
 	tok, err := tl.peek()
 	if err != nil {
 		return "", false
@@ -156,14 +157,14 @@ func (tl *tokenlist) readNexttokIfIsOneOfValue(val []string) (string, bool) {
 	return "", false
 }
 
-func (tl *tokenlist) peek() (*token, error) {
+func (tl *Tokenlist) peek() (*token, error) {
 	if len(tl.toks) == tl.pos {
 		return nil, io.EOF
 	}
 	return &tl.toks[tl.pos], nil
 }
 
-func (tl *tokenlist) read() (*token, error) {
+func (tl *Tokenlist) read() (*token, error) {
 	if len(tl.toks) == tl.pos {
 		return nil, io.EOF
 	}
@@ -171,14 +172,14 @@ func (tl *tokenlist) read() (*token, error) {
 	return &tl.toks[tl.pos-1], nil
 }
 
-func (tl *tokenlist) unread() error {
+func (tl *Tokenlist) unread() error {
 	tl.pos--
 	return nil
 }
 
 // skipType reads the next token and returns an error if the token type does not
 // match.
-func (tl *tokenlist) skipType(typ tokenType) error {
+func (tl *Tokenlist) skipType(typ tokenType) error {
 	var val *token
 	var err error
 	if val, err = tl.read(); err != nil {
@@ -190,7 +191,7 @@ func (tl *tokenlist) skipType(typ tokenType) error {
 	return nil
 }
 
-func (tl *tokenlist) skipNCName(name string) error {
+func (tl *Tokenlist) skipNCName(name string) error {
 	var val *token
 	var err error
 	if val, err = tl.read(); err != nil {
@@ -306,7 +307,7 @@ func getComment(sr *strings.Reader) (string, error) {
 	return string(comment), nil
 }
 
-func stringToTokenlist(str string) (*tokenlist, error) {
+func stringToTokenlist(str string) (*Tokenlist, error) {
 	var tokens []token
 	sr := strings.NewReader(str)
 	for {
@@ -440,6 +441,6 @@ func stringToTokenlist(str string) (*tokenlist, error) {
 			return nil, fmt.Errorf("Invalid char for xpath expression %q", string(r))
 		}
 	}
-	tl := tokenlist{pos: 0, toks: tokens}
+	tl := Tokenlist{pos: 0, toks: tokens}
 	return &tl, nil
 }

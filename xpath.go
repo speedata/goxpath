@@ -15,11 +15,11 @@ var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed 
 // Context is needed for variables, namespaces and XML navigation.
 type Context struct {
 	vars         map[string]Sequence
-	namespaces   map[string]string
+	Namespaces   map[string]string
 	context      Sequence
 	ctxPositions []int
 	ctxLengths   []int
-	pos          int
+	Pos          int
 	size         int
 	xmldoc       *goxml.XMLDocument
 }
@@ -29,9 +29,9 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	ctx := &Context{
 		xmldoc:     doc,
 		vars:       make(map[string]Sequence),
-		namespaces: make(map[string]string),
+		Namespaces: make(map[string]string),
 	}
-	ctx.namespaces["fn"] = fnNS
+	ctx.Namespaces["fn"] = fnNS
 	return ctx
 }
 
@@ -149,7 +149,7 @@ func (ctx *Context) Attributes(tf testfuncAttributes) (Sequence, error) {
 }
 
 // Filter applies predicates to the context
-func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
+func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 	var result Sequence
 	var predicateIsNum bool
 	var predicateNum int
@@ -195,7 +195,7 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 	}
 	for i, itm := range copyContext {
 		ctx.context = Sequence{itm}
-		ctx.pos = positions[i]
+		ctx.Pos = positions[i]
 		if len(lengths) > i {
 			ctx.size = lengths[i]
 		} else {
@@ -205,7 +205,7 @@ func (ctx *Context) Filter(filter evalFunc) (Sequence, error) {
 		if err != nil {
 			return nil, err
 		}
-		evalItem, err := booleanValue(predicate)
+		evalItem, err := BooleanValue(predicate)
 		if err != nil {
 			return nil, err
 		}
@@ -249,18 +249,24 @@ func itemStringvalue(itm Item) string {
 	switch t := itm.(type) {
 	case float64:
 		ret = fmt.Sprintf("%f", t)
+	case int:
+		ret = fmt.Sprintf("%d", t)
 	case *goxml.Attribute:
 		ret = fmt.Sprintf(t.Value)
 	case *goxml.Element:
 		ret = fmt.Sprintf(t.Stringvalue())
+	case goxml.CharData:
+		ret = t.Contents
 	case []goxml.XMLNode:
 		var str strings.Builder
 		for _, n := range t {
 			str.WriteString(itemStringvalue(n))
 		}
 		ret = str.String()
+	case string:
+		ret = t
 	default:
-		ret = fmt.Sprintf("%s", t)
+		ret = fmt.Sprintf("%s %T", t, t)
 	}
 	return ret
 }
@@ -287,7 +293,9 @@ func (s Sequence) Stringvalue() string {
 	return sb.String()
 }
 
-type evalFunc func(*Context) (Sequence, error)
+// EvalFunc returns a sequence evaluating the XPath expression in the given
+// context.
+type EvalFunc func(*Context) (Sequence, error)
 
 func isEqual(a, b interface{}) (bool, error) {
 	return a == b, nil
@@ -413,7 +421,7 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	return false, fmt.Errorf("FORG0001")
 }
 
-func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
+func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 	f := func(ctx *Context) (Sequence, error) {
 		left, err := lhs(ctx)
 		if err != nil {
@@ -439,7 +447,8 @@ func doCompare(op string, lhs evalFunc, rhs evalFunc) (evalFunc, error) {
 	return f, nil
 }
 
-func numberValue(s Sequence) (float64, error) {
+// NumberValue returns the sequence converted to a float.
+func NumberValue(s Sequence) (float64, error) {
 	if len(s) == 0 {
 		return math.NaN(), nil
 	}
@@ -456,7 +465,8 @@ func numberValue(s Sequence) (float64, error) {
 	return math.NaN(), nil
 }
 
-func booleanValue(s Sequence) (bool, error) {
+// BooleanValue returns the effective boolean value of the sequence.
+func BooleanValue(s Sequence) (bool, error) {
 	if len(s) == 0 {
 		return false, nil
 	}
@@ -479,10 +489,20 @@ func booleanValue(s Sequence) (bool, error) {
 	return false, fmt.Errorf("FORG0006 Invalid argument type")
 }
 
+// StringValue returns the string value of the sequence by concatenating the
+// string values of each item.
+func StringValue(s Sequence) (string, error) {
+	var sb strings.Builder
+	for _, itm := range s {
+		sb.WriteString(itemStringvalue(itm))
+	}
+	return sb.String(), nil
+}
+
 //  [2] Expr ::= ExprSingle ("," ExprSingle)*
-func parseExpr(tl *tokenlist) (evalFunc, error) {
+func parseExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "2 parseExpr")
-	var efs []evalFunc
+	var efs []EvalFunc
 	for {
 		ef, err := parseExprSingle(tl)
 		if err != nil {
@@ -517,9 +537,9 @@ func parseExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [3] ExprSingle ::= ForExpr | QuantifiedExpr | IfExpr | OrExpr
-func parseExprSingle(tl *tokenlist) (evalFunc, error) {
+func parseExprSingle(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "3 parseExprSingle")
-	var ef evalFunc
+	var ef EvalFunc
 	var err error
 	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"for", "some", "if"}); ok {
 		switch op {
@@ -546,9 +566,9 @@ func parseExprSingle(tl *tokenlist) (evalFunc, error) {
 
 // [4] ForExpr ::= SimpleForClause "return" ExprSingle
 // [5] SimpleForClause ::= "for" "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)*
-func parseForExpr(tl *tokenlist) (evalFunc, error) {
+func parseForExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "4 parseForExpr")
-	var simpleForClauseF evalFunc
+	var simpleForClauseF EvalFunc
 	var err error
 	var varname string
 	// simple for clause:
@@ -602,11 +622,11 @@ func parseForExpr(tl *tokenlist) (evalFunc, error) {
 // [6] QuantifiedExpr ::= ("some" | "every") "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)* "satisfies" ExprSingle
 
 // [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
-func parseIfExpr(tl *tokenlist) (evalFunc, error) {
+func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "7 parseIfExpr")
 	var nexttok *token
 	var err error
-	var boolEval, thenpart, elsepart evalFunc
+	var boolEval, thenpart, elsepart EvalFunc
 
 	if nexttok, err = tl.read(); err != nil {
 		return nil, err
@@ -638,7 +658,7 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		bv, err := booleanValue(res)
+		bv, err := BooleanValue(res)
 		if err != nil {
 			return nil, err
 		}
@@ -652,10 +672,10 @@ func parseIfExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [8] OrExpr ::= AndExpr ( "or" AndExpr )*
-func parseOrExpr(tl *tokenlist) (evalFunc, error) {
+func parseOrExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "8 parseOrExpr")
-	var ef evalFunc
-	var efs []evalFunc
+	var ef EvalFunc
+	var efs []EvalFunc
 	for {
 		ef, err := parseAndExpr(tl)
 		if err != nil {
@@ -680,7 +700,7 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 				return nil, err
 			}
 
-			b, err := booleanValue(s)
+			b, err := BooleanValue(s)
 			if err != nil {
 				return nil, err
 			}
@@ -697,11 +717,11 @@ func parseOrExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [9] AndExpr ::= ComparisonExpr ( "and" ComparisonExpr )*
-func parseAndExpr(tl *tokenlist) (evalFunc, error) {
+func parseAndExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "9 parseAndExpr")
 
-	var ef evalFunc
-	var efs []evalFunc
+	var ef EvalFunc
+	var efs []EvalFunc
 	for {
 		ef, err := parseComparisonExpr(tl)
 		if err != nil {
@@ -726,7 +746,7 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 				return nil, err
 			}
 
-			b, err := booleanValue(s)
+			b, err := BooleanValue(s)
 			if err != nil {
 				return nil, err
 			}
@@ -743,9 +763,9 @@ func parseAndExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [10] ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp| NodeComp) RangeExpr )?
-func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
+func parseComparisonExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "10 parseComparisonExpr")
-	var lhs, rhs evalFunc
+	var lhs, rhs EvalFunc
 	var err error
 	if lhs, err = parseRangeExpr(tl); err != nil {
 		leaveStep(tl, "10 parseComparisonExpr")
@@ -765,10 +785,10 @@ func parseComparisonExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [11] RangeExpr  ::=  AdditiveExpr ( "to" AdditiveExpr )?
-func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
+func parseRangeExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "11 parseRangeExpr")
-	var ef evalFunc
-	var efs []evalFunc
+	var ef EvalFunc
+	var efs []EvalFunc
 	var err error
 	for {
 		ef, err = parseAdditiveExpr(tl)
@@ -797,11 +817,11 @@ func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		lhsNum, err := numberValue(lhs)
+		lhsNum, err := NumberValue(lhs)
 		if err != nil {
 			return nil, err
 		}
-		rhsNum, err := numberValue(rhs)
+		rhsNum, err := NumberValue(rhs)
 		if err != nil {
 			return nil, err
 		}
@@ -816,11 +836,11 @@ func parseRangeExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [12] AdditiveExpr ::= MultiplicativeExpr ( ("+" | "-") MultiplicativeExpr )*
-func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
+func parseAdditiveExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "12 parseAdditiveExpr")
-	var efs []evalFunc
+	var efs []EvalFunc
 	var operator []string
-	var ef evalFunc
+	var ef EvalFunc
 	var err error
 	for {
 		ef, err = parseMultiplicativeExpr(tl)
@@ -844,7 +864,7 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		sum, err := numberValue(s)
+		sum, err := NumberValue(s)
 		if err != nil {
 			return nil, err
 		}
@@ -853,7 +873,7 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 			if err != nil {
 				return nil, err
 			}
-			flt, err := numberValue(s)
+			flt, err := NumberValue(s)
 			if operator[i-1] == "+" {
 				sum += flt
 			} else {
@@ -867,12 +887,12 @@ func parseAdditiveExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [13] MultiplicativeExpr ::=  UnionExpr ( ("*" | "div" | "idiv" | "mod") UnionExpr )*
-func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
+func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "13 parseMultiplicativeExpr")
 
-	var efs []evalFunc
+	var efs []EvalFunc
 	var operator []string
-	var ef evalFunc
+	var ef EvalFunc
 	var err error
 	for {
 		ef, err = parseUnionExpr(tl)
@@ -897,7 +917,7 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		sum, err := numberValue(s)
+		sum, err := NumberValue(s)
 		if err != nil {
 			return nil, err
 		}
@@ -906,7 +926,7 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 			if err != nil {
 				return nil, err
 			}
-			flt, err := numberValue(s)
+			flt, err := NumberValue(s)
 			switch operator[i-1] {
 			case "*":
 				sum *= flt
@@ -926,9 +946,9 @@ func parseMultiplicativeExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [14] UnionExpr ::= IntersectExceptExpr ( ("union" | "|") IntersectExceptExpr )*
-func parseUnionExpr(tl *tokenlist) (evalFunc, error) {
+func parseUnionExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "14 parseUnionExpr")
-	var efs []evalFunc
+	var efs []EvalFunc
 
 	for {
 		ef, err := parseIntersectExceptExpr(tl)
@@ -975,9 +995,9 @@ func parseUnionExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [15] IntersectExceptExpr  ::= InstanceofExpr ( ("intersect" | "except") InstanceofExpr )*
-func parseIntersectExceptExpr(tl *tokenlist) (evalFunc, error) {
+func parseIntersectExceptExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "15 parseIntersectExceptExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parseInstanceofExpr(tl)
 	if err != nil {
 		return nil, err
@@ -988,9 +1008,9 @@ func parseIntersectExceptExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [16] InstanceofExpr ::= TreatExpr ( "instance" "of" SequenceType )?
-func parseInstanceofExpr(tl *tokenlist) (evalFunc, error) {
+func parseInstanceofExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "16 parseInstanceofExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	var tf testFunc
 	ef, err := parseTreatExpr(tl)
 	if err != nil {
@@ -1044,9 +1064,9 @@ func parseInstanceofExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [17] TreatExpr ::= CastableExpr ( "treat" "as" SequenceType )?
-func parseTreatExpr(tl *tokenlist) (evalFunc, error) {
+func parseTreatExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "17 parseTreatExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parseCastableExpr(tl)
 	if err != nil {
 		return nil, err
@@ -1057,9 +1077,9 @@ func parseTreatExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [18] CastableExpr ::= CastExpr ( "castable" "as" SingleType )?
-func parseCastableExpr(tl *tokenlist) (evalFunc, error) {
+func parseCastableExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "18 parseCastableExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parseCastExpr(tl)
 	if err != nil {
 		return nil, err
@@ -1070,9 +1090,9 @@ func parseCastableExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [19] CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?
-func parseCastExpr(tl *tokenlist) (evalFunc, error) {
+func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "19 parseCastExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parseUnaryExpr(tl)
 	if err != nil {
 		return nil, err
@@ -1083,9 +1103,9 @@ func parseCastExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [20] UnaryExpr ::= ("-" | "+")* ValueExpr
-func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
+func parseUnaryExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "20 parseUnaryExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	mult := 1
 	for {
 		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"+", "-"}); ok {
@@ -1107,7 +1127,7 @@ func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 			if err != nil {
 				return nil, err
 			}
-			flt, err := numberValue(seq)
+			flt, err := NumberValue(seq)
 			if err != nil {
 				return nil, err
 			}
@@ -1121,9 +1141,9 @@ func parseUnaryExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [21] ValueExpr ::= PathExpr
-func parseValueExpr(tl *tokenlist) (evalFunc, error) {
+func parseValueExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "21 parseValueExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parsePathExpr(tl)
 	if err != nil {
 		leaveStep(tl, "21 parseValueExpr (err)")
@@ -1135,9 +1155,9 @@ func parseValueExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [25] PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
-func parsePathExpr(tl *tokenlist) (evalFunc, error) {
+func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "25 parsePathExpr")
-	var rpe evalFunc
+	var rpe EvalFunc
 	var op string
 	var hasOP bool
 	op, hasOP = tl.readNexttokIfIsOneOfValue([]string{"/", "//"})
@@ -1169,10 +1189,10 @@ func parsePathExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [26] RelativePathExpr ::= StepExpr (("/" | "//") StepExpr)*
-func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
+func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "26 parseRelativePathExpr")
-	var ef evalFunc
-	var efs []evalFunc
+	var ef EvalFunc
+	var efs []EvalFunc
 	var ops []string
 	var err error
 
@@ -1202,7 +1222,7 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 			ctx.size = len(copyContext)
 			for j, itm := range copyContext {
 				ctx.context = Sequence{itm}
-				ctx.pos = j + 1
+				ctx.Pos = j + 1
 				if seq, err = efs[i](ctx); err != nil {
 					return nil, err
 				}
@@ -1222,9 +1242,9 @@ func parseRelativePathExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [27] StepExpr := FilterExpr | AxisStep
-func parseStepExpr(tl *tokenlist) (evalFunc, error) {
+func parseStepExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "27 parseStepExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parseFilterExpr(tl)
 	if err != nil {
 		leaveStep(tl, "27 parseStepExpr (err1)")
@@ -1249,9 +1269,9 @@ func parseStepExpr(tl *tokenlist) (evalFunc, error) {
 
 // [28] AxisStep ::= (ReverseStep | ForwardStep) PredicateList
 // [39] PredicateList ::= Predicate*
-func parseAxisStep(tl *tokenlist) (evalFunc, error) {
+func parseAxisStep(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "28 parseAxisStep")
-	var ef evalFunc
+	var ef EvalFunc
 	var err error
 	if ef, err = parseForwardStep(tl); err != nil {
 		leaveStep(tl, "28 parseAxisStep (err)")
@@ -1291,6 +1311,7 @@ type axis int
 const (
 	axisChild axis = iota
 	axisAttribute
+	axisSelf
 )
 
 func (a axis) String() string {
@@ -1299,13 +1320,15 @@ func (a axis) String() string {
 		return "child"
 	case axisAttribute:
 		return "attribute"
+	case axisSelf:
+		return "self"
 	}
 	return ""
 }
 
 // [29] ForwardStep ::= (ForwardAxis NodeTest) | AbbrevForwardStep
 // [31] AbbrevForwardStep ::= "@"? NodeTest
-func parseForwardStep(tl *tokenlist) (evalFunc, error) {
+func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "29 parseForwardStep")
 	var err error
 
@@ -1318,6 +1341,10 @@ func parseForwardStep(tl *tokenlist) (evalFunc, error) {
 		switch nexttok.Value.(string) {
 		case "child":
 			stepAxis = axisChild
+		case "self":
+			stepAxis = axisSelf
+		default:
+			panic(fmt.Sprintf("axis step %s not yet implemented", nexttok.Value.(string)))
 		}
 	}
 
@@ -1344,6 +1371,8 @@ func parseForwardStep(tl *tokenlist) (evalFunc, error) {
 			ctx.childAxis()
 		case axisAttribute:
 			ctx.attributeAxis()
+		case axisSelf:
+			// nothing
 		default:
 			panic("unknown axis, nyi")
 		}
@@ -1368,7 +1397,7 @@ func parseForwardStep(tl *tokenlist) (evalFunc, error) {
 // [34] AbbrevReverseStep ::= ".."
 // [33] ReverseAxis ::= ("parent" "::") | ("ancestor" "::") | ("preceding-sibling" "::") | ("preceding" "::") | ("ancestor-or-self" "::")
 // [35] NodeTest ::= KindTest | NameTest
-func parseNodeTest(tl *tokenlist) (testFunc, error) {
+func parseNodeTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "35 parseNodeTest")
 	var tf testFunc
 	if str, found := tl.readNexttokIfIsOneOfValue([]string{"element", "node"}); found {
@@ -1405,7 +1434,7 @@ func parseNodeTest(tl *tokenlist) (testFunc, error) {
 }
 
 // [36] NameTest ::= QName | Wildcard
-func parseNameTest(tl *tokenlist) (testFunc, error) {
+func parseNameTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "36 parseNameTest")
 	var tf testFunc
 
@@ -1445,7 +1474,7 @@ func parseNameTest(tl *tokenlist) (testFunc, error) {
 }
 
 // [37] Wildcard ::= "*" | (NCName ":" "*") | ("*" ":" NCName)
-func parseWildCard(tl *tokenlist) (testFunc, error) {
+func parseWildCard(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "37 parseWildCard")
 	var tf testFunc
 	var err error
@@ -1485,9 +1514,9 @@ func parseWildCard(tl *tokenlist) (testFunc, error) {
 
 // [38] FilterExpr ::= PrimaryExpr PredicateList
 // [39] PredicateList ::= Predicate*
-func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
+func parseFilterExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "38 parseFilterExpr")
-	var ef evalFunc
+	var ef EvalFunc
 	ef, err := parsePrimaryExpr(tl)
 	if err != nil {
 		leaveStep(tl, "38 parseFilterExpr (err)")
@@ -1526,9 +1555,9 @@ func parseFilterExpr(tl *tokenlist) (evalFunc, error) {
 
 // [40] Predicate ::= "[" Expr "]"
 // [41] PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall
-func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
+func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "41 parsePrimaryExpr")
-	var ef evalFunc
+	var ef EvalFunc
 
 	nexttok, err := tl.read()
 	if err != nil {
@@ -1597,9 +1626,9 @@ func parsePrimaryExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 // [46] ParenthesizedExpr ::= "(" Expr? ")"
-func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
+func parseParenthesizedExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "46 parseParenthesizedExpr")
-	var exp, ef evalFunc
+	var exp, ef EvalFunc
 	var err error
 	exp, err = parseExpr(tl)
 	if err != nil {
@@ -1623,9 +1652,9 @@ func parseParenthesizedExpr(tl *tokenlist) (evalFunc, error) {
 }
 
 //  [48] FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"
-func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
+func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "48 parseFunctionCall")
-	var ef evalFunc
+	var ef EvalFunc
 
 	functionNameToken, err := tl.read()
 	if err != nil {
@@ -1649,7 +1678,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 		return ef, nil
 	}
 
-	var efs []evalFunc
+	var efs []EvalFunc
 
 	for {
 		es, err := parseExprSingle(tl)
@@ -1686,7 +1715,7 @@ func parseFunctionCall(tl *tokenlist) (evalFunc, error) {
 }
 
 // [50] SequenceType ::= ("empty-sequence" "(" ")")| (ItemType OccurrenceIndicator?)
-func parseSequenceType(tl *tokenlist) (testFunc, error) {
+func parseSequenceType(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "50 parseSequenceType")
 	var tf testFunc
 	var err error
@@ -1705,7 +1734,7 @@ func parseSequenceType(tl *tokenlist) (testFunc, error) {
 }
 
 // [52] ItemType ::= KindTest | ("item" "(" ")") | AtomicType
-func parseItemType(tl *tokenlist) (testFunc, error) {
+func parseItemType(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "52 parseItemType")
 	var tf testFunc
 	var err error
@@ -1723,7 +1752,7 @@ func parseItemType(tl *tokenlist) (testFunc, error) {
 // [53] AtomicType ::= QName
 
 // [54] KindTest ::= DocumentTest| ElementTest| AttributeTest| SchemaElementTest| SchemaAttributeTest| PITest| CommentTest| TextTest| AnyKindTest
-func parseKindTest(tl *tokenlist) (testFunc, error) {
+func parseKindTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "54 parseKindTest")
 	var tf testFunc
 	var err error
@@ -1758,7 +1787,7 @@ func parseKindTest(tl *tokenlist) (testFunc, error) {
 }
 
 // [56] DocumentTest ::= "document-node" "(" (ElementTest | SchemaElementTest)? ")"
-func parseDocumentTest(tl *tokenlist) (testFunc, error) {
+func parseDocumentTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "56 parseDocumentTest")
 	var tf testFunc
 	// var err error
@@ -1774,7 +1803,7 @@ func parseDocumentTest(tl *tokenlist) (testFunc, error) {
 }
 
 // [60] AttributeTest ::= "attribute" "(" (AttribNameOrWildcard ("," TypeName)?)? ")"
-func parseAttributeTest(tl *tokenlist) (testFunc, error) {
+func parseAttributeTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "60 parseAttributeTest")
 	var tf testFunc
 	if _, ok := tl.readNexttokIfIsOneOfValue([]string{"attribute"}); !ok {
@@ -1801,7 +1830,7 @@ func parseAttributeTest(tl *tokenlist) (testFunc, error) {
 }
 
 // [64] ElementTest ::= "element" "(" (ElementNameOrWildcard ("," TypeName "?"?)?)? ")"
-func parseElementTest(tl *tokenlist) (testFunc, error) {
+func parseElementTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "64 parseElementTest")
 	var tf testFunc
 	if _, ok := tl.readNexttokIfIsOneOfValue([]string{"element"}); !ok {
@@ -1840,7 +1869,10 @@ func parseElementTest(tl *tokenlist) (testFunc, error) {
 // [58] CommentTest ::= "comment" "(" ")"
 // [57] TextTest ::= "text" "(" ")"
 // [55] AnyKindTest ::= "node" "(" ")"
-func parseXPath(tl *tokenlist) (evalFunc, error) {
+
+// ParseXPath takes a previosly created token list and returns a function that
+// can be used to evaluate the XPath expression in different contexts.
+func ParseXPath(tl *Tokenlist) (EvalFunc, error) {
 	ef, err := parseExpr(tl)
 	if err != nil {
 		return nil, err
@@ -1858,13 +1890,13 @@ func (xp *Parser) SetVariable(name string, value Sequence) {
 	xp.Ctx.vars[name] = value
 }
 
-// Evaluate evaluates an xpath expression
+// Evaluate reads an XPath expression and evaluates it in the given context.
 func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
 	tl, err := stringToTokenlist(xpath)
 	if err != nil {
 		return nil, err
 	}
-	evaler, err := parseXPath(tl)
+	evaler, err := ParseXPath(tl)
 	if err != nil {
 		return nil, err
 	}

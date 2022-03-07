@@ -16,7 +16,7 @@ func TestBooleanValue(t *testing.T) {
 		{Sequence{math.NaN()}, false},
 	}
 	for _, td := range testdata {
-		bv, err := booleanValue(td.input)
+		bv, err := BooleanValue(td.input)
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -31,6 +31,30 @@ func TestEval(t *testing.T) {
 		input  string
 		result Sequence
 	}{
+		{`substring("öäü", 2) `, Sequence{"äü"}},
+		{`substring("Goldfarb", 5) `, Sequence{"farb"}},
+		{`substring("Goldfarb", 5, 3) `, Sequence{"far"}},
+		{`contains((), "a")`, Sequence{false}},
+		{`contains("", "")`, Sequence{true}},
+		{`contains("Shakespeare", "")`, Sequence{true}},
+		{`contains("", "a")`, Sequence{false}},
+		{`contains("Shakespeare", "spear")`, Sequence{true}},
+		{`codepoints-to-string( reverse(  string-to-codepoints('Hellö')  ) ) `, Sequence{"ölleH"}},
+		{`reverse( ( 1,2,3  ) ) `, Sequence{3.0, 2.0, 1.0}},
+		{`string-to-codepoints( "hellö" ) `, Sequence{104, 101, 108, 108, 246}},
+		{`codepoints-to-string( (65,33*2,67) )`, Sequence{"ABC"}},
+		{`matches("abracadabra", "bra")`, Sequence{true}},
+		{`matches("banana", "^(.a)+$")`, Sequence{true}},
+		{`matches("", "a*")`, Sequence{true}},
+		{`matches("23 May 2008", "^[0-9]+\s[A-Z][a-z]+\s[0-9]+$")`, Sequence{true}},
+		{`replace("facetiously", "[aeiouy]", "[$0]")`, Sequence{"f[a]c[e]t[i][o][u]sl[y]"}},
+		{`replace("banana", "(an)+?", "**")`, Sequence{"b****a"}},
+		{`replace("banana", "(an)+", "**")`, Sequence{"b**a"}},
+		{`replace("banana", "(ana|na)", "[$1]")`, Sequence{"b[ana][na]"}},
+		{`replace("banana", "a", "o")`, Sequence{"bonono"}},
+		{`tokenize("12, 16, 2", ",\s*")"`, Sequence{"12", "16", "2"}},
+		{`tokenize("abc[NL]def[XY]", "\[.*?\]")"`, Sequence{"abc", "def", ""}},
+		{`tokenize("Go home, Jack!","\W+")`, Sequence{"Go", "home", "Jack", ""}},
 		{`count(/root/other | /root/other)`, Sequence{2}},
 		{`/root/@zzz instance of attribute()+`, Sequence{false}},
 		{`/root/@foo instance of attribute()+`, Sequence{true}},
@@ -180,6 +204,7 @@ func TestEval(t *testing.T) {
 		{`string-length( () )`, Sequence{0}},
 		{`upper-case( 'aäÄ' )`, Sequence{"AÄÄ"}},
 		{`upper-case( () )`, Sequence{""}},
+		{`lower-case( "EΛΛAΣ" )`, Sequence{"eλλaσ"}},
 		{`/root/sub[2]/string-length()`, Sequence{4}},
 		{`/root/other/string()`, Sequence{"\n\t  contents subsub other\n\t", "\n\t  contents subsub other2\n\t"}},
 	}
