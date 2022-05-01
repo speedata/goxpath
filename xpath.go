@@ -14,12 +14,13 @@ var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed 
 
 // Context is needed for variables, namespaces and XML navigation.
 type Context struct {
+	Namespaces   map[string]string           // Storage for (private) name spaces
+	Store        map[interface{}]interface{} // Store can be used for private variables accessible in functions
+	Pos          int                         // Used to determine the position() in the sequence
 	vars         map[string]Sequence
-	Namespaces   map[string]string
 	context      Sequence
 	ctxPositions []int
 	ctxLengths   []int
-	Pos          int
 	size         int
 	xmldoc       *goxml.XMLDocument
 }
