@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/speedata/goxml"
@@ -292,6 +293,21 @@ func (s Sequence) Stringvalue() string {
 		sb.WriteString(itemStringvalue(itm))
 	}
 	return sb.String()
+}
+
+// IntValue returns the sequence value as an integer.
+func (s Sequence) IntValue() (int, error) {
+	if len(s) > 1 {
+		return 0, fmt.Errorf("at most one item expected in the sequence")
+	}
+	if len(s) == 0 {
+		return 0, nil
+	}
+	numberF, err := strconv.ParseFloat(itemStringvalue(s[0]), 64)
+	if err != nil {
+		return 0, err
+	}
+	return int(numberF), nil
 }
 
 // EvalFunc returns a sequence evaluating the XPath expression in the given
