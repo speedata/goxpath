@@ -44,6 +44,11 @@ func (ctx *Context) SetContext(seq Sequence) Sequence {
 	return oldCtx
 }
 
+// GetContext returns the current context.
+func (ctx *Context) GetContext() Sequence {
+	return ctx.context
+}
+
 // Document moves the node navigator to the document and retuns it
 func (ctx *Context) Document() goxml.XMLNode {
 	ctx.context = Sequence{ctx.xmldoc}
@@ -516,7 +521,7 @@ func StringValue(s Sequence) (string, error) {
 	return sb.String(), nil
 }
 
-//  [2] Expr ::= ExprSingle ("," ExprSingle)*
+// [2] Expr ::= ExprSingle ("," ExprSingle)*
 func parseExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "2 parseExpr")
 	var efs []EvalFunc
@@ -1668,7 +1673,7 @@ func parseParenthesizedExpr(tl *Tokenlist) (EvalFunc, error) {
 	return ef, nil
 }
 
-//  [48] FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"
+// [48] FunctionCall ::= QName "(" (ExprSingle ("," ExprSingle)*)? ")"
 func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "48 parseFunctionCall")
 	var ef EvalFunc
@@ -1717,13 +1722,16 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	// get expr single *
 	ef = func(ctx *Context) (Sequence, error) {
 		var arguments []Sequence
+		saveContext := ctx.GetContext()
 		for _, es := range efs {
 			seq, err := es(ctx)
 			if err != nil {
 				return nil, err
 			}
 			arguments = append(arguments, seq)
+			ctx.SetContext(saveContext)
 		}
+
 		return callFunction(fn, arguments, ctx)
 	}
 
