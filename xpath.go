@@ -273,7 +273,7 @@ func itemStringvalue(itm Item) string {
 	case string:
 		ret = t
 	default:
-		ret = fmt.Sprintf("%s %T", t, t)
+		ret = fmt.Sprint(t)
 	}
 	return ret
 }
@@ -393,6 +393,7 @@ const (
 func compareFunc(op string, a, b interface{}) (bool, error) {
 	var floatLeft, floatRight float64
 	var intLeft, intRight int
+	var int64Left, int64Right int64
 	var stringLeft, stringRight string
 	var dtLeft, dtRight datatype
 
@@ -406,7 +407,15 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	if intLeft, ok = a.(int); ok {
 		dtLeft = xInteger
 	}
+	if int64Left, ok = a.(int64); ok {
+		intLeft = int(int64Left)
+		dtLeft = xInteger
+	}
 	if intRight, ok = b.(int); ok {
+		dtRight = xInteger
+	}
+	if int64Right, ok = b.(int64); ok {
+		intRight = int(int64Right)
 		dtRight = xInteger
 	}
 	if stringLeft, ok = a.(string); ok {
@@ -1895,7 +1904,7 @@ func parseElementTest(tl *Tokenlist) (testFunc, error) {
 // [57] TextTest ::= "text" "(" ")"
 // [55] AnyKindTest ::= "node" "(" ")"
 
-// ParseXPath takes a previosly created token list and returns a function that
+// ParseXPath takes a previously created token list and returns a function that
 // can be used to evaluate the XPath expression in different contexts.
 func ParseXPath(tl *Tokenlist) (EvalFunc, error) {
 	ef, err := parseExpr(tl)
