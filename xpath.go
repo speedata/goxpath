@@ -37,15 +37,47 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	return ctx
 }
 
-// SetContext sets the context sequence and returns the previous one.
-func (ctx *Context) SetContext(seq Sequence) Sequence {
+// CopyContext creates a new context with the underlying xml document but can be
+// changed without changing the original context.
+func CopyContext(cur *Context) *Context {
+	ctx := &Context{
+		xmldoc:     cur.xmldoc,
+		vars:       make(map[string]Sequence),
+		Namespaces: make(map[string]string),
+		Store:      make(map[interface{}]interface{}),
+		context:    cur.context,
+	}
+
+	for k, v := range cur.vars {
+		ctx.vars[k] = v
+	}
+
+	for k, v := range cur.Namespaces {
+		ctx.Namespaces[k] = v
+	}
+	for k, v := range cur.Store {
+		ctx.Store[k] = v
+	}
+	ctx.Pos = cur.Pos
+	for _, l := range cur.ctxLengths {
+		ctx.ctxLengths = append(ctx.ctxLengths, l)
+	}
+	for _, l := range cur.ctxPositions {
+		ctx.ctxLengths = append(ctx.ctxPositions, l)
+	}
+
+	return ctx
+}
+
+// SetContextSequence sets the context sequence and returns the previous one.
+func (ctx *Context) SetContextSequence(seq Sequence) Sequence {
 	oldCtx := ctx.context
 	ctx.context = seq
 	return oldCtx
 }
 
-// GetContext returns the current context.
-func (ctx *Context) GetContext() Sequence {
+// GetContextSequence returns the current context.
+func (ctx *Context) GetContextSequence() Sequence {
 	return ctx.context
 }
 
@@ -1731,14 +1763,14 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	// get expr single *
 	ef = func(ctx *Context) (Sequence, error) {
 		var arguments []Sequence
-		saveContext := ctx.GetContext()
+		saveContext := ctx.GetContextSequence()
 		for _, es := range efs {
 			seq, err := es(ctx)
 			if err != nil {
 				return nil, err
 			}
 			arguments = append(arguments, seq)
-			ctx.SetContext(saveContext)
+			ctx.SetContextSequence(saveContext)
 		}
 
 		return callFunction(fn, arguments, ctx)
@@ -1917,6 +1949,11 @@ func ParseXPath(tl *Tokenlist) (EvalFunc, error) {
 // Parser contains all necessary references to the parser
 type Parser struct {
 	Ctx *Context
+}
+
+// XMLDocument returns the underlying XML document
+func (xp *Parser) XMLDocument() *goxml.XMLDocument {
+	return xp.Ctx.xmldoc
 }
 
 // SetVariable is used to set a variable name.
