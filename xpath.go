@@ -65,7 +65,6 @@ func CopyContext(cur *Context) *Context {
 	for _, l := range cur.ctxPositions {
 		ctx.ctxLengths = append(ctx.ctxPositions, l)
 	}
-
 	return ctx
 }
 
@@ -293,7 +292,7 @@ func itemStringvalue(itm Item) string {
 	case *goxml.Attribute:
 		ret = fmt.Sprintf(t.Value)
 	case *goxml.Element:
-		ret = fmt.Sprintf(t.Stringvalue())
+		ret = fmt.Sprint(t.Stringvalue())
 	case goxml.CharData:
 		ret = t.Contents
 	case []goxml.XMLNode:
