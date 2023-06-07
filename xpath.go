@@ -144,6 +144,10 @@ func (ctx *Context) childAxis() error {
 			}
 		case goxml.CharData:
 			seq = append(seq, t)
+		case Sequence:
+			for _, itm := range t {
+				seq = append(seq, itm)
+			}
 		default:
 			panic(fmt.Sprintf("childAxis nyi %T", t))
 		}
@@ -289,6 +293,8 @@ func itemStringvalue(itm Item) string {
 		ret = fmt.Sprintf("%f", t)
 	case int:
 		ret = fmt.Sprintf("%d", t)
+	case []uint8:
+		ret = fmt.Sprintf("%s", t)
 	case *goxml.Attribute:
 		ret = fmt.Sprintf(t.Value)
 	case *goxml.Element:

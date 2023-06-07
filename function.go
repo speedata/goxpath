@@ -415,10 +415,8 @@ func fnUppercase(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(arg) == 0 {
 		return Sequence{""}, nil
 	}
-	if str, ok := arg[0].(string); ok {
-		return Sequence{strings.ToUpper(str)}, nil
-	}
-	return Sequence{""}, nil
+
+	return Sequence{strings.ToUpper(arg.Stringvalue())}, nil
 }
 
 func fnTokenize(ctx *Context, args []Sequence) (Sequence, error) {
