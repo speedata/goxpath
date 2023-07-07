@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/speedata/goxml"
+	"golang.org/x/net/html"
 )
 
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
@@ -309,6 +310,10 @@ func itemStringvalue(itm Item) string {
 		ret = str.String()
 	case string:
 		ret = t
+	case *html.Node:
+		var buf strings.Builder
+		html.Render(&buf, t)
+		ret = buf.String()
 	default:
 		ret = fmt.Sprint(t)
 	}
