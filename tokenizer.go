@@ -18,13 +18,14 @@ const (
 	tokVarname
 	// tokNumber represents a float64.
 	tokNumber
-	// tokOperator contains a single or double letter operator or path sepearator.
+	// tokOperator contains a single or double letter operator or path
+	// separator.
 	tokOperator
 	// tokOpenParen is an opening parenthesis (.
 	tokOpenParen
 	// tokCloseParen is a closing parenthesis ).
 	tokCloseParen
-	// tokOpenBracket is an opeing bracket [.
+	// tokOpenBracket is an opening bracket [.
 	tokOpenBracket
 	// tokCloseBracket is a closing bracket ].
 	tokCloseBracket
