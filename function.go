@@ -5,19 +5,48 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/speedata/goxml"
 )
 
 var (
-	xpathfunctions   map[string]*Function
+	xpathfunctions   = make(map[string]*Function)
 	multipleWSRegexp *regexp.Regexp
 )
 
+// XSDate is a date instance
+type XSDate time.Time
+
+func (d XSDate) String() string {
+	// for example 2004-05-12+01:00
+	return time.Time(d).Format("2006-01-02-07:00")
+}
+
+// XSDateTime is a date time instance
+type XSDateTime time.Time
+
+func (d XSDateTime) String() string {
+	// for example 2004-05-12T18:17:15.125Z
+	return time.Time(d).Format("2006-01-02T15:04:05.000-07:00")
+}
+
+// XSTime is a time instance
+type XSTime time.Time
+
+func (d XSTime) String() string {
+	// for example 23:17:00.000-05:00
+	return time.Time(d).Format("15:04:05.000-07:00")
+}
+
+var currentTimeGetter = func() time.Time {
+	return time.Now()
+}
+
 const (
-	fnNS = "http://www.w3.org/2005/xpath-functions"
-	xsNS = "http://www.w3.org/2001/XMLSchema"
+	nsFN = "http://www.w3.org/2005/xpath-functions"
+	nsXS = "http://www.w3.org/2001/XMLSchema"
 )
 
 func fnAbs(ctx *Context, args []Sequence) (Sequence, error) {
@@ -37,6 +66,21 @@ func fnCeiling(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{math.Ceil(itm)}, err
 }
 
+func fnCodepointEqual(ctx *Context, args []Sequence) (Sequence, error) {
+	if len(args[0]) == 0 || len(args[1]) == 0 {
+		return Sequence{}, nil
+	}
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	return Sequence{firstarg == secondarg}, nil
+}
+
 func fnCodepointsToString(ctx *Context, args []Sequence) (Sequence, error) {
 	inputSeq := args[0]
 	var sb strings.Builder
@@ -48,6 +92,21 @@ func fnCodepointsToString(ctx *Context, args []Sequence) (Sequence, error) {
 		sb.WriteRune(rune(i))
 	}
 	return Sequence{sb.String()}, nil
+}
+
+func fnCompare(ctx *Context, args []Sequence) (Sequence, error) {
+	if len(args[0]) == 0 || len(args[1]) == 0 {
+		return Sequence{}, nil
+	}
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	return Sequence{strings.Compare(firstarg, secondarg)}, nil
 }
 
 func fnConcat(ctx *Context, args []Sequence) (Sequence, error) {
@@ -88,8 +147,33 @@ func fnCount(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{len(seq)}, nil
 }
 
+func fnCurrentDate(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{XSDate(currentTimeGetter())}, nil
+}
+
+func fnCurrentDateTime(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{XSDateTime(currentTimeGetter())}, nil
+}
+
+func fnCurrentTime(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{XSTime(currentTimeGetter())}, nil
+}
+
 func fnEmpty(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{len(args[0]) == 0}, nil
+}
+
+func fnEndsWith(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	return Sequence{strings.HasSuffix(firstarg, secondarg)}, nil
+
 }
 
 func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
@@ -100,6 +184,19 @@ func fnFloor(ctx *Context, args []Sequence) (Sequence, error) {
 	seq := args[0]
 	itm, err := NumberValue(seq)
 	return Sequence{math.Floor(itm)}, err
+}
+
+func fnHoursFromTime(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg := args[0]
+	if len(firstarg) != 1 {
+		return nil, fmt.Errorf("The first argument of hours-from-time must have length(1)")
+	}
+	var t XSTime
+	var ok bool
+	if t, ok = firstarg[0].(XSTime); !ok {
+		return nil, fmt.Errorf("The argument of hours-from-time must be xs:time")
+	}
+	return Sequence{time.Time(t).Format("15")}, nil
 }
 
 func fnLast(ctx *Context, args []Sequence) (Sequence, error) {
@@ -202,6 +299,19 @@ func fnMin(ctx *Context, args []Sequence) (Sequence, error) {
 		m = math.Min(m, ai)
 	}
 	return Sequence{m}, nil
+}
+
+func fnMinutesFromTime(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg := args[0]
+	if len(firstarg) != 1 {
+		return nil, fmt.Errorf("The first argument of minutes-from-time must have length(1)")
+	}
+	var t XSTime
+	var ok bool
+	if t, ok = firstarg[0].(XSTime); !ok {
+		return nil, fmt.Errorf("The argument of minutes-from-time must be xs:time")
+	}
+	return Sequence{time.Time(t).Format("04")}, nil
 }
 
 func fnNormalizeSpace(ctx *Context, args []Sequence) (Sequence, error) {
@@ -320,6 +430,19 @@ func fnRound(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{math.Floor(m + 0.5)}, nil
 }
 
+func fnSecondsFromTime(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg := args[0]
+	if len(firstarg) != 1 {
+		return nil, fmt.Errorf("The first argument of seconds-from-time must have length(1)")
+	}
+	var t XSTime
+	var ok bool
+	if t, ok = firstarg[0].(XSTime); !ok {
+		return nil, fmt.Errorf("The argument of seconds-from-time must be xs:time")
+	}
+	return Sequence{time.Time(t).Format("05")}, nil
+}
+
 func fnString(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
@@ -332,6 +455,19 @@ func fnString(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, err
 	}
 	return Sequence{sv}, nil
+}
+
+func fnStartsWith(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	return Sequence{strings.HasPrefix(firstarg, secondarg)}, nil
+
 }
 
 func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {
@@ -405,6 +541,65 @@ func fnSubstring(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{string(inputRunes[int(startNum)-1:])}, nil
 }
 
+func fnSubstringAfter(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	_, after, _ := strings.Cut(firstarg, secondarg)
+
+	return Sequence{after}, nil
+}
+
+func fnSubstringBefore(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	before, _, _ := strings.Cut(firstarg, secondarg)
+
+	return Sequence{before}, nil
+}
+
+func fnTranslate(ctx *Context, args []Sequence) (Sequence, error) {
+	firstarg, err := StringValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	secondarg, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	thirdarg, err := StringValue(args[2])
+	if err != nil {
+		return nil, err
+	}
+	var replace []string
+	var i int
+	var s rune
+	var t string
+	thirdArgRunes := []rune(thirdarg)
+	for i, s = range secondarg {
+		if len(thirdArgRunes) > i {
+			t = string(thirdArgRunes[i])
+		} else {
+			t = ""
+		}
+		replace = append(replace, string(s), t)
+	}
+	repl := strings.NewReplacer(replace...)
+
+	return Sequence{repl.Replace(firstarg)}, nil
+}
+
 func fnTrue(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{true}, nil
 }
@@ -456,39 +651,51 @@ func fnTokenize(ctx *Context, args []Sequence) (Sequence, error) {
 }
 
 func init() {
-	xpathfunctions = make(map[string]*Function)
 	multipleWSRegexp = regexp.MustCompile(`\s+`)
-	RegisterFunction(&Function{Name: "abs", Namespace: fnNS, F: fnAbs, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "boolean", Namespace: fnNS, F: fnBoolean, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "ceiling", Namespace: fnNS, F: fnCeiling, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "codepoints-to-string", Namespace: fnNS, F: fnCodepointsToString, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "concat", Namespace: fnNS, F: fnConcat, MinArg: 2, MaxArg: -1})
-	RegisterFunction(&Function{Name: "contains", Namespace: fnNS, F: fnContains, MinArg: 2, MaxArg: 3})
-	RegisterFunction(&Function{Name: "count", Namespace: fnNS, F: fnCount, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "empty", Namespace: fnNS, F: fnEmpty, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "false", Namespace: fnNS, F: fnFalse})
-	RegisterFunction(&Function{Name: "floor", Namespace: fnNS, F: fnFloor, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "last", Namespace: fnNS, F: fnLast})
-	RegisterFunction(&Function{Name: "local-name", Namespace: fnNS, F: fnLocalName, MaxArg: 1})
-	RegisterFunction(&Function{Name: "lower-case", Namespace: fnNS, F: fnLowercase, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "matches", Namespace: fnNS, F: fnMatches, MinArg: 2, MaxArg: 3})
-	RegisterFunction(&Function{Name: "max", Namespace: fnNS, F: fnMax, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "min", Namespace: fnNS, F: fnMin, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "not", Namespace: fnNS, F: fnNot, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "normalize-space", Namespace: fnNS, F: fnNormalizeSpace, MaxArg: 1})
-	RegisterFunction(&Function{Name: "number", Namespace: fnNS, F: fnNumber, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "position", Namespace: fnNS, F: fnPosition})
-	RegisterFunction(&Function{Name: "replace", Namespace: fnNS, F: fnReplace, MinArg: 3, MaxArg: 4})
-	RegisterFunction(&Function{Name: "reverse", Namespace: fnNS, F: fnReverse, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "round", Namespace: fnNS, F: fnRound, MaxArg: 1})
-	RegisterFunction(&Function{Name: "string", Namespace: fnNS, F: fnString, MaxArg: 1})
-	RegisterFunction(&Function{Name: "string-join", Namespace: fnNS, F: fnStringJoin, MinArg: 1, MaxArg: 2})
-	RegisterFunction(&Function{Name: "string-length", Namespace: fnNS, F: fnStringLength, MaxArg: 1})
-	RegisterFunction(&Function{Name: "string-to-codepoints", Namespace: fnNS, F: fnStringToCodepoints, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "substring", Namespace: fnNS, F: fnSubstring, MinArg: 2, MaxArg: 3})
-	RegisterFunction(&Function{Name: "true", Namespace: fnNS, F: fnTrue})
-	RegisterFunction(&Function{Name: "tokenize", Namespace: fnNS, F: fnTokenize, MinArg: 2, MaxArg: 3})
-	RegisterFunction(&Function{Name: "upper-case", Namespace: fnNS, F: fnUppercase, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "abs", Namespace: nsFN, F: fnAbs, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "boolean", Namespace: nsFN, F: fnBoolean, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "ceiling", Namespace: nsFN, F: fnCeiling, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "codepoint-equal", Namespace: nsFN, F: fnCodepointEqual, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "codepoints-to-string", Namespace: nsFN, F: fnCodepointsToString, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "compare", Namespace: nsFN, F: fnCompare, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "concat", Namespace: nsFN, F: fnConcat, MinArg: 2, MaxArg: -1})
+	RegisterFunction(&Function{Name: "contains", Namespace: nsFN, F: fnContains, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "count", Namespace: nsFN, F: fnCount, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "current-date", Namespace: nsFN, F: fnCurrentDate, MinArg: 0, MaxArg: 0})
+	RegisterFunction(&Function{Name: "current-dateTime", Namespace: nsFN, F: fnCurrentDateTime, MinArg: 0, MaxArg: 0})
+	RegisterFunction(&Function{Name: "current-time", Namespace: nsFN, F: fnCurrentTime, MinArg: 0, MaxArg: 0})
+	RegisterFunction(&Function{Name: "empty", Namespace: nsFN, F: fnEmpty, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "ends-with", Namespace: nsFN, F: fnEndsWith, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "false", Namespace: nsFN, F: fnFalse})
+	RegisterFunction(&Function{Name: "floor", Namespace: nsFN, F: fnFloor, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "hours-from-time", Namespace: nsFN, F: fnHoursFromTime, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "minutes-from-time", Namespace: nsFN, F: fnMinutesFromTime, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "seconds-from-time", Namespace: nsFN, F: fnSecondsFromTime, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "last", Namespace: nsFN, F: fnLast})
+	RegisterFunction(&Function{Name: "local-name", Namespace: nsFN, F: fnLocalName, MaxArg: 1})
+	RegisterFunction(&Function{Name: "lower-case", Namespace: nsFN, F: fnLowercase, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "matches", Namespace: nsFN, F: fnMatches, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "max", Namespace: nsFN, F: fnMax, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "min", Namespace: nsFN, F: fnMin, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "not", Namespace: nsFN, F: fnNot, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "normalize-space", Namespace: nsFN, F: fnNormalizeSpace, MaxArg: 1})
+	RegisterFunction(&Function{Name: "number", Namespace: nsFN, F: fnNumber, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "position", Namespace: nsFN, F: fnPosition})
+	RegisterFunction(&Function{Name: "replace", Namespace: nsFN, F: fnReplace, MinArg: 3, MaxArg: 4})
+	RegisterFunction(&Function{Name: "reverse", Namespace: nsFN, F: fnReverse, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "round", Namespace: nsFN, F: fnRound, MaxArg: 1})
+	RegisterFunction(&Function{Name: "string", Namespace: nsFN, F: fnString, MaxArg: 1})
+	RegisterFunction(&Function{Name: "starts-with", Namespace: nsFN, F: fnStartsWith, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "string-join", Namespace: nsFN, F: fnStringJoin, MinArg: 1, MaxArg: 2})
+	RegisterFunction(&Function{Name: "string-length", Namespace: nsFN, F: fnStringLength, MaxArg: 1})
+	RegisterFunction(&Function{Name: "string-to-codepoints", Namespace: nsFN, F: fnStringToCodepoints, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "substring", Namespace: nsFN, F: fnSubstring, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "substring-before", Namespace: nsFN, F: fnSubstringBefore, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "substring-after", Namespace: nsFN, F: fnSubstringAfter, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "translate", Namespace: nsFN, F: fnTranslate, MinArg: 3, MaxArg: 3})
+	RegisterFunction(&Function{Name: "true", Namespace: nsFN, F: fnTrue})
+	RegisterFunction(&Function{Name: "tokenize", Namespace: nsFN, F: fnTokenize, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "upper-case", Namespace: nsFN, F: fnUppercase, MinArg: 1, MaxArg: 1})
 }
 
 // Function represents an XPath function
@@ -520,7 +727,7 @@ func callFunction(name string, arguments []Sequence, ctx *Context) (Sequence, er
 			return nil, fmt.Errorf("Could not find namespace for prefix %q", parts[0])
 		}
 	} else {
-		ns = fnNS
+		ns = nsFN
 	}
 
 	fn := getfunction(ns, name)

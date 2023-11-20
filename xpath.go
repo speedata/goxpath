@@ -34,7 +34,8 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 		vars:       make(map[string]Sequence),
 		Namespaces: make(map[string]string),
 	}
-	ctx.Namespaces["fn"] = fnNS
+	ctx.Namespaces["fn"] = nsFN
+	ctx.Namespaces["xs"] = nsXS
 	return ctx
 }
 
