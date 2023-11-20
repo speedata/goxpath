@@ -129,6 +129,26 @@ func (tl *Tokenlist) nexttokIsTyp(typ tokenType) bool {
 	return tok.Typ == typ
 }
 
+func (tl *Tokenlist) readIfTokenFollow(toks []token) bool {
+	pos := tl.pos
+	savepos := tl.pos
+	for _, tok := range toks {
+		peekTok, err := tl.peek()
+		if err != nil {
+			tl.pos = savepos
+			return false
+		}
+		if peekTok.Value == tok.Value && peekTok.Typ == tok.Typ {
+			pos++
+		} else {
+			tl.pos = savepos
+			return false
+		}
+		tl.read()
+	}
+	return true
+}
+
 // nexttokIsValue looks at the next token and returns true if the value matches.
 // Does not move the pointer forward.
 func (tl *Tokenlist) nexttokIsValue(val string) bool {
@@ -146,6 +166,25 @@ func (tl *Tokenlist) readNexttokIfIsOneOfValue(val []string) (string, bool) {
 	tok, err := tl.peek()
 	if err != nil {
 		return "", false
+	}
+	if str, ok := tok.Value.(string); ok {
+		for _, v := range val {
+			if str == v {
+				tl.read()
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
+func (tl *Tokenlist) readNexttokIfIsOneOfValueAndType(val []string, typ tokenType) (string, bool) {
+	tok, err := tl.peek()
+	if err != nil {
+		return "", false
+	}
+	if tok.Typ != typ {
+		return fmt.Sprint(tok.Value), false
 	}
 	if str, ok := tok.Value.(string); ok {
 		for _, v := range val {
@@ -335,6 +374,8 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 				sr.UnreadRune()
 				sr.UnreadRune()
 				tokens = append(tokens, token{getNum(sr), tokNumber})
+			} else if nextRune == '.' {
+				tokens = append(tokens, token{"..", tokOperator})
 			} else {
 				sr.UnreadRune()
 				tokens = append(tokens, token{".", tokOperator})

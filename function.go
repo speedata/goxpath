@@ -109,7 +109,7 @@ func fnLast(ctx *Context, args []Sequence) (Sequence, error) {
 func fnLocalName(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
-		arg = ctx.context
+		arg = ctx.sequence
 	} else {
 		arg = args[0]
 	}
@@ -207,7 +207,7 @@ func fnMin(ctx *Context, args []Sequence) (Sequence, error) {
 func fnNormalizeSpace(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
-		arg = ctx.context
+		arg = ctx.sequence
 	} else {
 		arg = args[0]
 	}
@@ -235,8 +235,8 @@ func fnNot(ctx *Context, args []Sequence) (Sequence, error) {
 }
 
 func fnNumber(ctx *Context, args []Sequence) (Sequence, error) {
-	bv, err := NumberValue(args[0])
-	return Sequence{bv}, err
+	nv, err := NumberValue(args[0])
+	return Sequence{nv}, err
 }
 
 func fnPosition(ctx *Context, args []Sequence) (Sequence, error) {
@@ -323,7 +323,7 @@ func fnRound(ctx *Context, args []Sequence) (Sequence, error) {
 func fnString(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
-		arg = ctx.context
+		arg = ctx.sequence
 	} else {
 		arg = args[0]
 	}
@@ -350,7 +350,7 @@ func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {
 func fnStringLength(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
-		arg = ctx.context
+		arg = ctx.sequence
 	} else {
 		arg = args[0]
 	}

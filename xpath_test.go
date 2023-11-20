@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+var doc = `<root empty="" quotationmarks='"text"' one="1" foo="no">
+	<sub foo="baz" someattr="somevalue">123</sub>
+	<sub foo="bar" attr="baz">sub2</sub>
+	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar">subsub</subsub></sub>
+	<other foo="barbaz">
+	  <subsub foo="oof">contents subsub other</subsub>
+	</other>
+	<other foo="other2">
+	  <subsub foo="oof">contents subsub other2</subsub>
+	</other>
+	<a>
+	<sub p="a1/1"></sub>
+	<sub p="a1/2"></sub>
+	</a>
+	<a>
+	<sub  p="a2/1"></sub>
+	<sub  p="a2/2"></sub>
+	</a>
+</root>`
+
 func TestBooleanValue(t *testing.T) {
 	testdata := []struct {
 		input  Sequence
@@ -89,6 +109,7 @@ func TestEval(t *testing.T) {
 		{`4 < 2  or 5 < 7`, Sequence{true}},
 		{`2 > 4 or 3 > 5 or 6 > 2`, Sequence{true}},
 		{`4 < 2  or 7 < 5`, Sequence{false}},
+		{`/root/@one < 2 and /root/@one >= 1`, Sequence{true}},
 		{`concat('abc','def')`, Sequence{"abcdef"}},
 		{`string(number('zzz')) = 'NaN'`, Sequence{true}},
 		{`3 + 4 - 2`, Sequence{5.0}},
@@ -106,7 +127,6 @@ func TestEval(t *testing.T) {
 		{`-3 idiv 2`, Sequence{-1.0}},
 		{`-3 idiv -2`, Sequence{1.0}},
 		{`9.0 idiv 3`, Sequence{3.0}},
-		{`-3.5 idiv 3`, Sequence{-1.0}},
 		{`-3.5 idiv 3`, Sequence{-1.0}},
 		{`3.0 idiv 4`, Sequence{0.0}},
 		{`7 div 2 = 3.5 `, Sequence{true}},
@@ -148,6 +168,7 @@ func TestEval(t *testing.T) {
 		{`boolean( () )`, Sequence{false}},
 		{`boolean( (()) )`, Sequence{false}},
 		{`boolean('false')`, Sequence{true}},
+		{`boolean(/root) `, Sequence{true}},
 		{`ceiling(1.0)`, Sequence{1.0}},
 		{`ceiling(1.6)`, Sequence{2.0}},
 		{`ceiling(17 div 3)`, Sequence{6.0}},
@@ -207,33 +228,75 @@ func TestEval(t *testing.T) {
 		{`lower-case( "EΛΛAΣ" )`, Sequence{"eλλaσ"}},
 		{`/root/sub[2]/string-length()`, Sequence{4}},
 		{`/root/other/string()`, Sequence{"\n\t  contents subsub other\n\t", "\n\t  contents subsub other2\n\t"}},
-	}
-	doc := `<root empty="" quotationmarks='"text"' one="1" foo="no">
-	<sub foo="baz" someattr="somevalue">123</sub>
-	<sub foo="bar" attr="baz">sub2</sub>
-	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar">subsub</subsub></sub>
-	<other foo="barbaz">
-	  <subsub foo="oof">contents subsub other</subsub>
-	</other>
-	<other foo="other2">
-	  <subsub foo="oof">contents subsub other2</subsub>
-	</other>
-	<a>
-	<sub p="a1/1"></sub>
-	<sub p="a1/2"></sub>
-  </a>
-  <a>
-	<sub  p="a2/1"></sub>
-	<sub  p="a2/2"></sub>
-  </a>
-</root>`
-	sr := strings.NewReader(doc)
-	np, err := NewParser(sr)
-	if err != nil {
-		t.Error(err)
+		{`count(/root/descendant-or-self::sub) `, Sequence{7}},
+		{`/child::root/@foo = 'no'`, Sequence{true}},
+		{`count(/root/sub/descendant-or-self::sub)  `, Sequence{3}},
+		{`/root/sub/text()  `, Sequence{"123", "sub2", "contents sub3"}},
+		{`count(/root/sub/descendant-or-self::text())  `, Sequence{4}},
+		{`/root/sub/descendant-or-self::text()[2])  `, Sequence{"subsub"}},
+		{`(/root/*/descendant::sub/@p)[4] = "a2/2"  `, Sequence{true}},
+		{`count(/root/*/descendant::sub[1]) `, Sequence{2}},
+		{`count( /root/sub[3]/following-sibling::element() )`, Sequence{4}},
+		{`count(/root/a/node())  `, Sequence{10}},
+		{`(/root/a/node()[2]/@p)[1] = 'a1/1'  `, Sequence{true}},
+		{`count(/root//sub)  `, Sequence{7}},
+		{`count(/root//sub[1])  `, Sequence{3}},
+		{`count(/root//text())  `, Sequence{24}},
+		{`/root/sub[1]/attribute::*[1]/string() `, Sequence{"baz"}},
+		{`count(/root/child::element())  `, Sequence{7}},
+		{`local-name( (/root/sub[3]/following-sibling::element())[2])  `, Sequence{"other"}},
+		{`count( /root/sub[3]/following-sibling::element() )  `, Sequence{4}},
+		{`count(/root/sub[3]/following::element() ) `, Sequence{10}},
+		{`local-name( (/root/sub[3]/following-sibling::element())[2])  `, Sequence{"other"}},
+		{`count( /root/sub[3]/following-sibling::element() )  `, Sequence{4}},
+		{`count(/root/sub[3]/following::element() )  `, Sequence{10}},
+		{`/root/sub[3]/subsub/parent::element()/local-name()   `, Sequence{"sub"}},
+		{`count(/root/sub[3]/subsub/ancestor::element())    `, Sequence{2}},
+		{`/root/sub[3]/subsub/ancestor::element()/local-name()    `, Sequence{"root", "sub"}},
+		{`/root/sub[3]/subsub/ancestor-or-self::element()/local-name() `, Sequence{"root", "sub", "subsub"}},
+		{`/root/sub[3]/preceding-sibling::element()/string(@foo) `, Sequence{"baz", "bar"}},
+		{`/root/other[1]/preceding::element()/string() `, Sequence{"123", "sub2", "contents sub3subsub", "subsub"}},
+		{`/root//subsub[1]/../@self = "sub3" `, Sequence{true}},
+		{`for $i in 1 to 2 , $j in 2 to 3 return $i * $j `, Sequence{2.0, 3.0, 4.0, 6.0}},
+		{`count ( for $i in /root/sub return $i ) `, Sequence{3}},
+		{`some  $i in (1,2) satisfies $i = 1  `, Sequence{true}},
+		{`every $i in (1,2) satisfies $i = 1  `, Sequence{false}},
+		{`every $i in (1,2) satisfies $i = (1,2)  `, Sequence{true}},
+		{`for $i in /root/sub return $i[1]/@foo/string() `, Sequence{"baz", "bar", "bar"}},
+		{`for $i in /root/* return $i/local-name() `, Sequence{"sub", "sub", "sub", "other", "other", "a", "a"}},
+		{`some $i in /root/sub satisfies $i/@foo="bar" `, Sequence{true}},
+		{`some $x in (1, 2, 3), $y in (2, 3) satisfies $x + $y = 4 `, Sequence{true}},
+		{`every $x in (1, 2, 3), $y in (2, 3) satisfies $x + $y = 4 `, Sequence{false}},
+		{`every $x in 1, $y in 2 satisfies $x + $y = 3 `, Sequence{true}},
+		{`every $x in /root/sub, $y in 2 satisfies not(empty($x/@foo)) `, Sequence{true}},
+		{`every $x in /root/@one, $y in 2 satisfies $x + $y = 3.0 `, Sequence{true}},
+		{`every $x in /root/@one, $y in 2 satisfies $x + $y + $a = 8.0 `, Sequence{true}},
+		{`/root/sub[1] is /root/sub[2]/preceding-sibling::sub[1]`, Sequence{true}},
+		{`/root/sub[1] << /root/sub[@self='sub3']`, Sequence{true}},
+		{`/root/sub[2] >> /root/sub[1]`, Sequence{true}},
+		{`/root/sub[1] << /root/sub[4]`, Sequence{}},
+		{`string(/root/sub[position() < 3] intersect /root/sub[@foo='bar']) `, Sequence{"sub2"}},
+		{`string(for $seq1 in /root/sub[position() < 3], $seq2 in /root/sub[@foo='bar'] return $seq1 intersect $seq2)`, Sequence{"sub2"}},
+		{`string(/root/sub[position() < 3] except /root/sub[@foo='bar']) `, Sequence{"123"}},
+		{`( /root/sub )/string()`, Sequence{"123", "sub2", "contents sub3subsub"}},
+		{`(/root/sub[position() < 3] except /root/sub[@foo='bar'])/string()`, Sequence{"123"}},
+		{`count( //sub ) `, Sequence{7}},
+		{`count(/root/sub[3][1]) `, Sequence{1}},
+		{`/root/sub instance of empty-sequence() `, Sequence{false}},
+		{`/root/sub instance of empty-sequence() `, Sequence{false}},
+		{`/root/sub[4] instance of empty-sequence() `, Sequence{true}},
+		{`/root/sub[1]/attribute()/string() `, Sequence{"baz", "somevalue"}},
+		{`/root/sub[1]/attribute(*)/string() `, Sequence{"baz", "somevalue"}},
+		{`/root/sub[1]/attribute(foo)/string() `, Sequence{"baz"}},
 	}
 
 	for _, td := range testdata {
+		sr := strings.NewReader(doc)
+		np, err := NewParser(sr)
+		if err != nil {
+			t.Error(err)
+		}
+
 		for key, value := range map[string]Sequence{
 			"foo":        {"bar"},
 			"onedotfive": {1.5},
@@ -253,7 +316,7 @@ func TestEval(t *testing.T) {
 		}
 		for i, itm := range seq {
 			if itm != td.result[i] {
-				t.Errorf("seq[%d] = %#v, want %v. test: %s", i, itm, td.result[i], td.input)
+				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
 	}

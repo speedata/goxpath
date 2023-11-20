@@ -116,6 +116,7 @@ func TestOperator(t *testing.T) {
 		{`.`, []token{{`.`, tokOperator}}},
 		{`(1,2)`, []token{{'(', tokOpenParen}, {1.0, tokNumber}, {`,`, tokComma}, {2.0, tokNumber}, {')', tokCloseParen}}},
 		{`$hello`, []token{{"hello", tokVarname}}},
+		{`a("a",'/')`, []token{{"a", tokQName}, {'(', tokOpenParen}, {"a", tokString}, {`,`, tokComma}, {"/", tokString}, {')', tokCloseParen}}},
 	}
 	for _, td := range testdata {
 		toklist, err := stringToTokenlist(td.input)
