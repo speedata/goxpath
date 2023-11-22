@@ -1970,11 +1970,16 @@ func parseNodeTest(tl *Tokenlist) (testFunc, error) {
 	var tf testFunc
 	var err error
 	if str, found := tl.readNexttokIfIsOneOfValueAndType(kindTestStrings, tokQName); found {
-		if tf, err = parseKindTest(tl, str); err != nil {
-			return nil, err
-		}
-		if tf != nil {
-			return tf, nil
+		if err = tl.skipType(tokOpenParen); err != nil {
+			tl.unread()
+		} else {
+			tl.unread()
+			if tf, err = parseKindTest(tl, str); err != nil {
+				return nil, err
+			}
+			if tf != nil {
+				return tf, nil
+			}
 		}
 	}
 	if tf, err = parseNameTest(tl); err != nil {

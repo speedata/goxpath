@@ -316,6 +316,7 @@ func TestEval(t *testing.T) {
 		{`/root/sub[1]/attribute()/string() `, Sequence{"baz", "somevalue"}},
 		{`/root/sub[1]/attribute(*)/string() `, Sequence{"baz", "somevalue"}},
 		{`/root/sub[1]/attribute(foo)/string() `, Sequence{"baz"}},
+		{`text`, Sequence{}},
 	}
 
 	for _, td := range testdata {

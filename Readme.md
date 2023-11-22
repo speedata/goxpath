@@ -67,10 +67,21 @@ func main() {
 
 This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Second Edition)](https://www.w3.org/TR/xquery-operators)
 
+### Accessors
+
 | Function                                                      | Accessor     | Accepts                         | Returns   |
 | ------------------------------------------------------------- | ------------ | ------------------------------- | --------- |
 | [string](https://www.w3.org/TR/xquery-operators/#func-string) | string-value | an optional item or no argument | xs:string |
 
+
+### Functions on Numeric Values
+
+| Function                                                        | Meaning                                                                                            |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [abs](https://www.w3.org/TR/xquery-operators/#func-abs)         | Returns the absolute value of the argument.                                                        |
+| [ceiling](https://www.w3.org/TR/xquery-operators/#func-ceiling) | Returns the smallest number with no fractional part that is greater than or equal to the argument. |
+| [floor](https://www.w3.org/TR/xquery-operators/#func-floor)     | Returns the largest number with no fractional part that is less than or equal to the argument.     |
+| [round](https://www.w3.org/TR/xquery-operators/#func-round)     | Rounds to the nearest number with no fractional part.                                              |
 
 ### Functions to Assemble and Disassemble Strings
 
@@ -182,6 +193,7 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 
 ## Not yet implemented functions
 
+###  Accessors
 | Function                                                                  | Accessor     | Accepts                         | Returns                     |
 | ------------------------------------------------------------------------- | ------------ | ------------------------------- | --------------------------- |
 | [node-name](https://www.w3.org/TR/xquery-operators/#func-node-name)       | node-name    | an optional node                | zero or one xs:QName        |
@@ -190,6 +202,12 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [base-uri](https://www.w3.org/TR/xquery-operators/#func-base-uri)         | base-uri     | an optional node or no argument | zero or one xs:anyURI       |
 | [document-uri](https://www.w3.org/TR/xquery-operators/#func-document-uri) | document-uri | an optional node                | zero or one xs:anyURI       |
 
+
+### Functions on Numeric Values
+
+| Function                                                                              | Accessor                                                                                                                                                                                    | Accepts | Returns |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| [round-half-to-even](https://www.w3.org/TR/xquery-operators/#func-round-half-to-even) | Takes a number and a precision and returns a number rounded to the given precision. If the fractional part is exactly half, the result is the number whose least significant digit is even. |
 
 
 ### Functions on String Values
