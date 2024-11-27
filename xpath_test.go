@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+var nsDoc = `<a:root xmlns:a="anamespace">
+  <a:sub>text</a:sub>
+</a:root>`
+
 var doc = `<root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
 	<sub foo="bar" attr="baz">sub2</sub>
@@ -202,6 +206,7 @@ func TestEval(t *testing.T) {
 		{`string(floor('xxx' ))`, Sequence{"NaN"}},
 		{`string(/root/sub[last()])`, Sequence{"contents sub3subsub"}},
 		{`/root/local-name()`, Sequence{"root"}},
+		{`local-name(root()/*)`, Sequence{"root"}},
 		{`hours-from-time(xs:time("11:23:00")) `, Sequence{"11"}},
 		{`minutes-from-time(xs:time("11:23:00")) `, Sequence{"23"}},
 		{`seconds-from-time(xs:time("11:23:01")) `, Sequence{"01"}},
@@ -336,6 +341,39 @@ func TestEval(t *testing.T) {
 		} {
 			np.SetVariable(key, value)
 		}
+		seq, err := np.Evaluate(td.input)
+		if err != nil {
+			t.Errorf(err.Error())
+		}
+		if got, want := len(seq), len(td.result); got != want {
+			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
+		}
+		for i, itm := range seq {
+			if itm != td.result[i] {
+				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
+			}
+		}
+	}
+}
+
+func TestNSEval(t *testing.T) {
+	currentTimeGetter = func() time.Time {
+		return time.Unix(1700558398, 0)
+	}
+	testdata := []struct {
+		input  string
+		result Sequence
+	}{
+		{`string(/a:root/a:sub)`, Sequence{"text"}},
+	}
+	for _, td := range testdata {
+		sr := strings.NewReader(nsDoc)
+		np, err := NewParser(sr)
+		np.Ctx.Namespaces["a"] = "anamespace"
+		if err != nil {
+			t.Error(err)
+		}
+
 		seq, err := np.Evaluate(td.input)
 		if err != nil {
 			t.Errorf(err.Error())

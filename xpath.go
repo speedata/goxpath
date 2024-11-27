@@ -27,6 +27,23 @@ type Context struct {
 	xmldoc       *goxml.XMLDocument
 }
 
+type rName struct {
+	uri       string
+	localName string
+}
+
+func rNameFromString(namespaces map[string]string, name string) rName {
+	testName := rName{}
+	parts := strings.Split(name, ":")
+	if len(parts) == 1 {
+		testName.localName = parts[0]
+	} else if len(parts) == 2 {
+		testName.localName = parts[1]
+		testName.uri = namespaces[parts[0]]
+	}
+	return testName
+}
+
 // NewContext returns a context from the xml document
 func NewContext(doc *goxml.XMLDocument) *Context {
 	ctx := &Context{
@@ -103,7 +120,7 @@ func (ctx *Context) Root() (Sequence, error) {
 	return ctx.sequence, err
 }
 
-type testFunc func(Item) bool
+type testFunc func(*Context, Item) bool
 type testfuncChildren func(*goxml.Element) bool
 type testfuncAttributes func(*goxml.Attribute) bool
 
@@ -148,26 +165,26 @@ func (ctx *Context) Attributes(tf testfuncAttributes) (Sequence, error) {
 	return seq, nil
 }
 
-func isElement(itm Item) bool {
+func isElement(ctx *Context, itm Item) bool {
 	if _, ok := itm.(*goxml.Element); ok {
 		return true
 	}
 	return false
 }
 
-func isNode(itm Item) bool {
+func isNode(ctx *Context, itm Item) bool {
 	return true
 }
 
-func isAttribute(itm Item) bool {
+func isAttribute(ctx *Context, itm Item) bool {
 	if _, ok := itm.(*goxml.Attribute); ok {
 		return true
 	}
 	return false
 }
 
-func returnAttributeNameTest(name string) func(Item) bool {
-	return func(itm Item) bool {
+func returnAttributeNameTest(name string) func(*Context, Item) bool {
+	return func(ctx *Context, itm Item) bool {
 		if attr, ok := itm.(*goxml.Attribute); ok {
 			if attr.Name == name {
 				return true
@@ -177,12 +194,12 @@ func returnAttributeNameTest(name string) func(Item) bool {
 	}
 }
 
-func returnElementNameTest(name string) func(Item) bool {
-	return func(itm Item) bool {
+func returnElementNameTest(name string) func(*Context, Item) bool {
+	return func(ctx *Context, itm Item) bool {
 		if elt, ok := itm.(*goxml.Element); ok {
-			if elt.Name == name {
-				return true
-			}
+			testName := rNameFromString(ctx.Namespaces, name)
+			eltName := rName{uri: elt.Namespaces[elt.Prefix], localName: elt.Name}
+			return eltName.localName == testName.localName && eltName.uri == testName.uri
 		}
 		return false
 	}
@@ -619,7 +636,7 @@ func BooleanValue(s Sequence) (bool, error) {
 			return val != 0 && val == val, nil
 		} else if val, ok := itm.(int); ok {
 			return val != 0, nil
-		} else if isElement(itm) {
+		} else if isElement(nil, itm) {
 			return true, nil
 		} else {
 			fmt.Printf("itm %#v\n", itm)
@@ -960,13 +977,15 @@ func parseQuantifiedExpr(tl *Tokenlist) (EvalFunc, error) {
 // [7] IfExpr ::= "if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "7 parseIfExpr")
-	var nexttok *token
 	var err error
 	var boolEval, thenpart, elsepart EvalFunc
 
 	if err = tl.skipType(tokOpenParen); err != nil {
 		leaveStep(tl, "7 parseIfExpr")
-		return nil, fmt.Errorf("open parenthesis expected, found %v", nexttok.Value)
+		if nexttok, err := tl.peek(); err != nil {
+			return nil, fmt.Errorf("open parenthesis expected, found %v", nexttok.Value)
+		}
+		return nil, fmt.Errorf("open parenthesis expected, found EOF")
 	}
 	if boolEval, err = parseExpr(tl); err != nil {
 		leaveStep(tl, "7 parseIfExpr")
@@ -1474,7 +1493,7 @@ func parseInstanceofExpr(tl *Tokenlist) (EvalFunc, error) {
 			}
 
 			for _, itm := range ctx.sequence {
-				if !tf(itm) {
+				if !tf(ctx, itm) {
 					return Sequence{false}, nil
 				}
 			}
@@ -2040,14 +2059,14 @@ func parseWildCard(tl *Tokenlist) (testFunc, error) {
 	if str, ok := strTok.Value.(string); ok {
 		if str == "*" || strings.HasPrefix(str, "*:") || strings.HasSuffix(str, ":*") {
 			if tl.attributeMode {
-				tf = func(itm Item) bool {
+				tf = func(ctx *Context, itm Item) bool {
 					if _, ok := itm.(*goxml.Attribute); ok {
 						return true
 					}
 					return false
 				}
 			} else {
-				tf = func(itm Item) bool {
+				tf = func(ctx *Context, itm Item) bool {
 					if _, ok := itm.(*goxml.Element); ok {
 						return true
 					}
@@ -2368,7 +2387,7 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 		if err = tl.skipType(tokCloseParen); err != nil {
 			return nil, err
 		}
-		tf := func(itm Item) bool {
+		tf := func(ctx *Context, itm Item) bool {
 			return true
 		}
 		leaveStep(tl, "35 parseNodeTest")
@@ -2377,7 +2396,7 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 		if err = tl.skipType(tokCloseParen); err != nil {
 			return nil, err
 		}
-		tf := func(itm Item) bool {
+		tf := func(ctx *Context, itm Item) bool {
 			if _, ok := itm.(goxml.CharData); ok {
 				return true
 			}

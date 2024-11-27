@@ -12,18 +12,18 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 		switch t := n.(type) {
 		case *goxml.XMLDocument:
 			for _, cld := range t.Children() {
-				if tf(cld) {
+				if tf(ctx, cld) {
 					seq = append(seq, cld)
 				}
 			}
 		case *goxml.Element:
 			for _, cld := range t.Attributes() {
-				if tf(cld) {
+				if tf(ctx, cld) {
 					seq = append(seq, cld)
 				}
 			}
 			for _, cld := range t.Children() {
-				if tf(cld) {
+				if tf(ctx, cld) {
 					if cd, ok := cld.(goxml.CharData); ok {
 						seq = append(seq, cd.Contents)
 					} else {
@@ -32,17 +32,17 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 				}
 			}
 		case goxml.CharData:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
 			}
 		case Sequence:
 			for _, itm := range t {
-				if tf(itm) {
+				if tf(ctx, itm) {
 					seq = append(seq, itm)
 				}
 			}
 		case string:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
 		default:
@@ -58,7 +58,7 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 	for _, n := range ctx.sequence {
 		switch t := n.(type) {
 		case *goxml.XMLDocument:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
 			for _, cld := range t.Children() {
@@ -76,7 +76,7 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 				}
 			}
 		case *goxml.Element:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
 			for _, cld := range t.Children() {
@@ -92,7 +92,7 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 					}
 					ctx.sequence = copysequence
 				} else if txt, ok := cld.(goxml.CharData); ok {
-					if tf(txt) {
+					if tf(ctx, txt) {
 						seq = append(seq, txt.Contents)
 					}
 
@@ -100,12 +100,12 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 
 			}
 		case goxml.CharData:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
 			}
 		case Sequence:
 			for _, itm := range t {
-				if tf(itm) {
+				if tf(ctx, itm) {
 					seq = append(seq, itm)
 				}
 			}
@@ -133,7 +133,7 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 					seq = append(seq, itm)
 				}
 				ctx.sequence = copysequence
-				if tf(cld) {
+				if tf(ctx, cld) {
 					seq = append(seq, cld)
 				}
 			}
@@ -149,17 +149,17 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 					seq = append(seq, itm)
 				}
 				ctx.sequence = copysequence
-				if tf(cld) {
+				if tf(ctx, cld) {
 					seq = append(seq, cld)
 				}
 			}
 		case goxml.CharData:
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
 			}
 		case Sequence:
 			for _, itm := range t {
-				if tf(itm) {
+				if tf(ctx, itm) {
 					seq = append(seq, itm)
 				}
 			}
@@ -196,11 +196,11 @@ func (ctx *Context) followingSiblingAxis(tf testFunc) (Sequence, error) {
 			for _, cld := range t.Parent.Children() {
 				switch u := cld.(type) {
 				case *goxml.Element:
-					if u.ID > curid && tf(u) {
+					if u.ID > curid && tf(ctx, u) {
 						seq = append(seq, u)
 					}
 				case goxml.CharData:
-					if u.ID > curid && tf(u) {
+					if u.ID > curid && tf(ctx, u) {
 						seq = append(seq, u)
 					}
 				}
@@ -216,7 +216,7 @@ func (ctx *Context) parentAxis(tf testFunc) (Sequence, error) {
 	for _, n := range ctx.sequence {
 		switch t := n.(type) {
 		case *goxml.Element:
-			if tf(t.Parent) {
+			if tf(ctx, t.Parent) {
 				seq = append(seq, t.Parent)
 			}
 		}
@@ -239,12 +239,12 @@ func (ctx *Context) ancestorAxis(tf testFunc) (Sequence, error) {
 					return nil, err
 				}
 				for _, itm := range s {
-					if tf(itm) {
+					if tf(ctx, itm) {
 						seq = append(seq, itm)
 					}
 				}
 			}
-			if tf(parent) {
+			if tf(ctx, parent) {
 				seq = append(seq, parent)
 			}
 		}
@@ -267,12 +267,12 @@ func (ctx *Context) ancestorOrSelfAxis(tf testFunc) (Sequence, error) {
 					return nil, err
 				}
 				for _, itm := range s {
-					if tf(itm) {
+					if tf(ctx, itm) {
 						seq = append(seq, itm)
 					}
 				}
 			}
-			if tf(t) {
+			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
 		}
@@ -292,11 +292,11 @@ func (ctx *Context) precedingSiblingAxis(tf testFunc) (Sequence, error) {
 			for _, cld := range t.Parent.Children() {
 				switch u := cld.(type) {
 				case *goxml.Element:
-					if u.ID < curid && tf(u) {
+					if u.ID < curid && tf(ctx, u) {
 						seq = append(seq, u)
 					}
 				case goxml.CharData:
-					if u.ID < curid && tf(u) {
+					if u.ID < curid && tf(ctx, u) {
 						seq = append(seq, u)
 					}
 				}

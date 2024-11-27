@@ -336,6 +336,51 @@ func fnNormalizeSpace(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{}, nil
 }
 
+func fnName(ctx *Context, args []Sequence) (Sequence, error) {
+	var arg Sequence
+	if len(args) == 0 {
+		arg = ctx.sequence
+	} else {
+		arg = args[0]
+	}
+	if len(arg) == 0 {
+		return Sequence{""}, nil
+	}
+	if elt, ok := arg[0].(*goxml.Element); ok {
+		if pfx := elt.Prefix; pfx != "" {
+			return Sequence{pfx + ":" + elt.Name}, nil
+		}
+		return Sequence{elt.Name}, nil
+	}
+	if attr, ok := arg[0].(*goxml.Attribute); ok {
+		if pfx := attr.Prefix; attr.Prefix != "" {
+			return Sequence{pfx + ":" + attr.Name}, nil
+		}
+		return Sequence{attr.Name}, nil
+	}
+	return Sequence{""}, nil
+}
+
+func fnNamespaceURI(ctx *Context, args []Sequence) (Sequence, error) {
+	var arg Sequence
+	if len(args) == 0 {
+		arg = ctx.sequence
+	} else {
+		arg = args[0]
+	}
+	if len(arg) == 0 {
+		return Sequence{""}, nil
+	}
+	if elt, ok := arg[0].(*goxml.Element); ok {
+		return Sequence{elt.Namespaces[elt.Prefix]}, nil
+	}
+	if attr, ok := arg[0].(*goxml.Attribute); ok {
+		return Sequence{attr.Namespace}, nil
+
+	}
+	return Sequence{""}, nil
+}
+
 func fnNot(ctx *Context, args []Sequence) (Sequence, error) {
 	b, err := BooleanValue(args[0])
 	if err != nil {
@@ -415,6 +460,10 @@ func fnReverse(ctx *Context, args []Sequence) (Sequence, error) {
 	}
 
 	return retSeq, nil
+}
+
+func fnRoot(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{ctx.Document()}, nil
 }
 
 func fnRound(ctx *Context, args []Sequence) (Sequence, error) {
@@ -677,12 +726,15 @@ func init() {
 	RegisterFunction(&Function{Name: "matches", Namespace: nsFN, F: fnMatches, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "max", Namespace: nsFN, F: fnMax, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "min", Namespace: nsFN, F: fnMin, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "name", Namespace: nsFN, F: fnName, MaxArg: 1})
+	RegisterFunction(&Function{Name: "namespace-uri", Namespace: nsFN, F: fnNamespaceURI, MaxArg: 1})
 	RegisterFunction(&Function{Name: "not", Namespace: nsFN, F: fnNot, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "normalize-space", Namespace: nsFN, F: fnNormalizeSpace, MaxArg: 1})
 	RegisterFunction(&Function{Name: "number", Namespace: nsFN, F: fnNumber, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "position", Namespace: nsFN, F: fnPosition})
 	RegisterFunction(&Function{Name: "replace", Namespace: nsFN, F: fnReplace, MinArg: 3, MaxArg: 4})
 	RegisterFunction(&Function{Name: "reverse", Namespace: nsFN, F: fnReverse, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "root", Namespace: nsFN, F: fnRoot, MaxArg: 1})
 	RegisterFunction(&Function{Name: "round", Namespace: nsFN, F: fnRound, MaxArg: 1})
 	RegisterFunction(&Function{Name: "string", Namespace: nsFN, F: fnString, MaxArg: 1})
 	RegisterFunction(&Function{Name: "starts-with", Namespace: nsFN, F: fnStartsWith, MinArg: 2, MaxArg: 2})

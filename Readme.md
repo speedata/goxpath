@@ -56,6 +56,52 @@ func main() {
 }
 ```
 
+When working with namespaces, you need to have them predefined in your query:
+
+`myfile.xml`:
+
+```xml
+<a:root xmlns:a="anamespace">
+  <a:sub>text</a:sub>
+</a:root>
+```
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/speedata/goxpath"
+)
+
+func dothings() error {
+	r, err := os.Open("myfile.xml")
+	if err != nil {
+		return err
+	}
+	xp, err := goxpath.NewParser(r)
+	if err != nil {
+		return err
+	}
+	xp.Ctx.Namespaces["a"] = "anamespace"
+	seq, err := xp.Evaluate("/a:root/a:sub/text()")
+	if err != nil {
+		return err
+	}
+	fmt.Println(seq.Stringvalue())
+	return nil
+}
+
+func main() {
+	if err := dothings(); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
 ## Limitations
 
 * No schema types
@@ -159,10 +205,13 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 
 ### Functions on Nodes
 
-| Function                                                              | Meaning                                                                                                      |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Function                                                                    | Meaning                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [name](https://www.w3.org/TR/xquery-operators/#func-name)                   | Returns the name of the context node or the specified node as an xs:string.                                                                                                                                                     |
+| [namespace-uri](https://www.w3.org/TR/xquery-operators/#func-namespace-uri) | Returns the namespace URI as an xs:anyURI for the xs:QName of the argument node or the context node if the argument is omitted. This may be the URI corresponding to the zero-length string if the xs:QName is in no namespace. |
 | [local-name](https://www.w3.org/TR/xquery-operators/#func-local-name) | Returns the local name of the context node or the specified node as an xs:NCName.                            |
 | [number](https://www.w3.org/TR/xquery-operators/#func-number)         | Returns the value of the context item after atomization or the specified argument converted to an xs:double. |
+| [root](https://www.w3.org/TR/xquery-operators/#func-root)             | Returns the root of the tree to which the node argument belongs.                                             |
 
 | Function                                                        | Meaning                                                        |
 | --------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -282,12 +331,10 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 
 ### Functions on Nodes
 
-| Function                                                                    | Meaning                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [name](https://www.w3.org/TR/xquery-operators/#func-name)                   | Returns the name of the context node or the specified node as an xs:string.                                                                                                                                                     |
-| [namespace-uri](https://www.w3.org/TR/xquery-operators/#func-namespace-uri) | Returns the namespace URI as an xs:anyURI for the xs:QName of the argument node or the context node if the argument is omitted. This may be the URI corresponding to the zero-length string if the xs:QName is in no namespace. |
-| [lang](https://www.w3.org/TR/xquery-operators/#func-lang)                   | Returns true or false, depending on whether the language of the given node or the context node, as defined using the xml:lang attribute, is the same as, or a sublanguage of, the language specified by the argument.           |
-| [root](https://www.w3.org/TR/xquery-operators/#func-root)                   | Returns the root of the tree to which the node argument belongs.                                                                                                                                                                |
+| Function                                                  | Meaning                                                                                                                                                                                                               |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [lang](https://www.w3.org/TR/xquery-operators/#func-lang) | Returns true or false, depending on whether the language of the given node or the context node, as defined using the xml:lang attribute, is the same as, or a sublanguage of, the language specified by the argument. |
+
 
 | Function                                                                        | Meaning                                                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
