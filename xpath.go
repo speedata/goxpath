@@ -107,7 +107,7 @@ func (ctx *Context) Document() goxml.XMLNode {
 	return ctx.xmldoc
 }
 
-// Root moves the node navigator to the root node of the document
+// Root moves the node navigator to the root node of the document.
 func (ctx *Context) Root() (Sequence, error) {
 	var err error
 	cur, err := ctx.xmldoc.Root()
