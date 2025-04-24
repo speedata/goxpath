@@ -184,6 +184,31 @@ func isAttribute(ctx *Context, itm Item) bool {
 	return false
 }
 
+func isComment(ctx *Context, itm Item) bool {
+	if _, ok := itm.(goxml.Comment); ok {
+		return true
+	}
+	return false
+}
+
+func isProcessingInstruction(ctx *Context, itm Item) bool {
+	if _, ok := itm.(goxml.ProcInst); ok {
+		return true
+	}
+	return false
+}
+
+func returnProcessingInstructionNameTest(name string) func(*Context, Item) bool {
+	return func(ctx *Context, itm Item) bool {
+		if pi, ok := itm.(goxml.ProcInst); ok {
+			if pi.Target == name {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 func returnAttributeNameTest(name string) func(*Context, Item) bool {
 	return func(ctx *Context, itm Item) bool {
 		if attr, ok := itm.(*goxml.Attribute); ok {
@@ -317,6 +342,12 @@ func itemStringvalue(itm Item) string {
 		ret = fmt.Sprintf(t.Value)
 	case *goxml.Element:
 		ret = fmt.Sprint(t.Stringvalue())
+	case goxml.Comment:
+		ret = fmt.Sprint(t.Contents)
+	case goxml.ProcInst:
+		ret = fmt.Sprint(string(t.Inst))
+	case *goxml.ProcInst:
+		ret = fmt.Sprint(string(t.Inst))
 	case goxml.CharData:
 		ret = t.Contents
 	case []goxml.XMLNode:
@@ -332,6 +363,7 @@ func itemStringvalue(itm Item) string {
 		html.Render(&buf, t)
 		ret = buf.String()
 	default:
+		// fmt.Printf("~~> t %T\n", t)
 		ret = fmt.Sprint(t)
 	}
 	return ret
@@ -2213,7 +2245,7 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 	if tl.nexttokIsTyp(tokOpenParen) {
 		tl.unread() // function name
 		fname := nexttok.String()
-		if fname == "text" || fname == "element" || fname == "attribute" || fname == "node" {
+		if fname == "text" || fname == "element" || fname == "attribute" || fname == "node" || fname == "comment" || fname == "processing-instruction" {
 			return nil, nil
 		}
 		ef, err := parseFunctionCall(tl)
@@ -2443,6 +2475,37 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 			}
 			leaveStep(tl, "35 parseNodeTest")
 			return returnAttributeNameTest(nexttok.String()), nil
+		}
+	case "comment":
+		if err = tl.skipType(tokCloseParen); err != nil {
+			return nil, err
+		}
+
+		leaveStep(tl, "35 parseNodeTest")
+		return isComment, nil
+	case "processing-instruction":
+		nexttok, err := tl.peek()
+		if err != nil {
+			return nil, err
+		}
+		if nexttok.Value == ')' {
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+
+			leaveStep(tl, "35 parseNodeTest")
+			return isProcessingInstruction, nil
+		}
+		nexttok, err = tl.read()
+		if err != nil {
+			return nil, err
+		}
+		if nexttok.Typ == tokQName {
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return returnProcessingInstructionNameTest(nexttok.String()), nil
 		}
 	default:
 		if err = tl.skipType(tokCloseParen); err != nil {

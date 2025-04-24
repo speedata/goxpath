@@ -11,7 +11,7 @@ var nsDoc = `<a:root xmlns:a="anamespace">
   <a:sub>text</a:sub>
 </a:root>`
 
-var doc = `<root empty="" quotationmarks='"text"' one="1" foo="no">
+var doc = `<!-- comment --><?pi text ?><root empty="" quotationmarks='"text"' one="1" foo="no">
 	<sub foo="baz" someattr="somevalue">123</sub>
 	<sub foo="bar" attr="baz">sub2</sub>
 	<sub foo="bar" self="sub3">contents sub3<subsub foo="bar">subsub</subsub></sub>
@@ -323,6 +323,10 @@ func TestEval(t *testing.T) {
 		{`/root/sub[1]/attribute(foo)/string() `, Sequence{"baz"}},
 		{`text`, Sequence{}},
 		{`count(/)`, Sequence{1}},
+		{`string(/comment())`, Sequence{" comment "}},
+		{`string(/processing-instruction())`, Sequence{"text "}},
+		{`string(/processing-instruction(pi))`, Sequence{"text "}},
+		{`string(/processing-instruction(doesnotexist))`, Sequence{""}},
 	}
 
 	for _, td := range testdata {
