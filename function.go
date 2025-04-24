@@ -527,7 +527,7 @@ func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {
 	joiner = args[1][0].(string)
 	collection := make([]string, len(args[0]))
 	for i, itm := range args[0] {
-		collection[i] = itm.(string)
+		collection[i] = itemStringvalue(itm)
 	}
 	return Sequence{strings.Join(collection, joiner)}, nil
 }
