@@ -1,6 +1,7 @@
 package goxpath
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -665,7 +666,9 @@ func parseExpr(tl *Tokenlist) (EvalFunc, error) {
 			leaveStep(tl, "2 parseExpr (err)")
 			return nil, err
 		}
-		efs = append(efs, ef)
+		if ef != nil {
+			efs = append(efs, ef)
+		}
 		if !tl.nexttokIsTyp(tokComma) {
 			break
 		}
@@ -1657,6 +1660,13 @@ func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	rpe, err := parseRelativePathExpr(tl)
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			// EOF is not an error
+			leaveStep(tl, "25 parsePathExpr (EOF)")
+			return func(ctx *Context) (Sequence, error) {
+				return Sequence{ctx.Document()}, nil
+			}, nil
+		}
 		leaveStep(tl, "25 parsePathExpr (err)")
 		return nil, err
 	}
@@ -1666,6 +1676,12 @@ func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 			ctx.Document()
 			if op == "//" {
 				ctx.descendantOrSelfAxis(isNode)
+			}
+			if rpe == nil {
+				if op == "/" {
+					return Sequence{ctx.Document()}, nil
+				}
+				return nil, nil
 			}
 			seq, err := rpe(ctx)
 			if err != nil {
@@ -1765,9 +1781,7 @@ func parseStepExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	if ef == nil {
-		ef = func(ctx *Context) (Sequence, error) {
-			return Sequence{}, nil
-		}
+		return nil, nil
 	}
 	leaveStep(tl, "27 parseStepExpr")
 	return ef, nil
@@ -2227,7 +2241,9 @@ func parseParenthesizedExpr(tl *Tokenlist) (EvalFunc, error) {
 	if err = tl.skipType(tokCloseParen); err != nil {
 		return nil, err
 	}
-
+	if exp == nil {
+		return nil, nil
+	}
 	ef = func(ctx *Context) (Sequence, error) {
 		seq, err := exp(ctx)
 		if err != nil {
