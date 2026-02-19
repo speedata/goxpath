@@ -217,13 +217,18 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | --------------------------------------------------------------- | -------------------------------------------------------------- |
 | [boolean](https://www.w3.org/TR/xquery-operators/#func-boolean) | Computes the effective boolean value of the argument sequence. |
 | [empty](https://www.w3.org/TR/xquery-operators/#func-empty)     | Indicates whether or not the provided sequence is empty.       |
+| [exists](https://www.w3.org/TR/xquery-operators/#func-exists)   | Indicates whether or not the provided sequence is not empty.   |
 | [reverse](https://www.w3.org/TR/xquery-operators/#func-reverse) | Reverses the order of items in a sequence.                     |
+
+### Aggregate Functions
 
 | Function                                                    | Meaning                                                         |
 | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| [avg](https://www.w3.org/TR/xquery-operators/#func-avg)     | Returns the average of a sequence of values.                    |
 | [count](https://www.w3.org/TR/xquery-operators/#func-count) | Returns the number of items in a sequence.                      |
 | [max](https://www.w3.org/TR/xquery-operators/#func-max)     | Returns the maximum value from a sequence of comparable values. |
 | [min](https://www.w3.org/TR/xquery-operators/#func-min)     | Returns the minimum value from a sequence of comparable values. |
+| [sum](https://www.w3.org/TR/xquery-operators/#func-sum)     | Returns the sum of a sequence of values.                        |
 
 | Function                                                          | Meaning                                                                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -238,6 +243,20 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [current-dateTime](https://www.w3.org/TR/xquery-operators/#func-current-dateTime) | Returns the current xs:dateTime. |
 | [current-date](https://www.w3.org/TR/xquery-operators/#func-current-date)         | Returns the current xs:date.     |
 | [current-time](https://www.w3.org/TR/xquery-operators/#func-current-time)         | Returns the current xs:time.     |
+
+### Functions on Sequences
+
+| Function                                                                        | Meaning                                                                                     |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [distinct-values](https://www.w3.org/TR/xquery-operators/#func-distinct-values) | Returns a sequence with duplicate values removed.                                           |
+| [index-of](https://www.w3.org/TR/xquery-operators/#func-index-of)               | Returns the positions of items in a sequence that match a given value.                      |
+| [subsequence](https://www.w3.org/TR/xquery-operators/#func-subsequence)         | Returns the subsequence of a given sequence, identified by location.                        |
+
+### Formatting Functions
+
+| Function                                                                      | Meaning                                                    |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [format-number](https://www.w3.org/TR/xquery-operators/#func-format-number)   | Formats a number as a string using a picture string.       |
 
 
 ## Not yet implemented functions
@@ -336,15 +355,11 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [lang](https://www.w3.org/TR/xquery-operators/#func-lang) | Returns true or false, depending on whether the language of the given node or the context node, as defined using the xml:lang attribute, is the same as, or a sublanguage of, the language specified by the argument. |
 
 
-| Function                                                                        | Meaning                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [index-of](https://www.w3.org/TR/xquery-operators/#func-index-of)               | Returns a sequence of xs:integers, each of which is the index of a member of the sequence specified as the first argument that is equal to the value of the second argument. If no members of the specified sequence are equal to the value of the second argument, the empty sequence is returned. |
-| [exists](https://www.w3.org/TR/xquery-operators/#func-exists)                   | Indicates whether or not the provided sequence is not empty.                                                                                                                                                                                                                                        |
-| [distinct-values](https://www.w3.org/TR/xquery-operators/#func-distinct-values) | Returns a sequence in which all but one of a set of duplicate values, based on value equality, have been deleted. The order in which the distinct values are returned is implementation dependent.                                                                                                  |
-| [insert-before](https://www.w3.org/TR/xquery-operators/#func-insert-before)     | Inserts an item or sequence of items at a specified position in a sequence.                                                                                                                                                                                                                         |
-| [remove](https://www.w3.org/TR/xquery-operators/#func-remove)                   | Removes an item from a specified position in a sequence.                                                                                                                                                                                                                                            |
-| [subsequence](https://www.w3.org/TR/xquery-operators/#func-subsequence)         | Returns the subsequence of a given sequence, identified by location.                                                                                                                                                                                                                                |
-| [unordered](https://www.w3.org/TR/xquery-operators/#func-unordered)             | Returns the items in the given sequence in a non-deterministic order.                                                                                                                                                                                                                               |
+| Function                                                                    | Meaning                                                                         |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [insert-before](https://www.w3.org/TR/xquery-operators/#func-insert-before) | Inserts an item or sequence of items at a specified position in a sequence.     |
+| [remove](https://www.w3.org/TR/xquery-operators/#func-remove)               | Removes an item from a specified position in a sequence.                        |
+| [unordered](https://www.w3.org/TR/xquery-operators/#func-unordered)         | Returns the items in the given sequence in a non-deterministic order.           |
 
 ### Functions That Test the Cardinality of Sequences
 
@@ -360,14 +375,6 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | Function                                                              | Meaning                                                                                     |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | [deep-equal](https://www.w3.org/TR/xquery-operators/#func-deep-equal) | Returns true if the two arguments have items that compare equal in corresponding positions. |
-
-###  Aggregate Functions
-
-| Function                                                | Meaning                                      |
-| ------------------------------------------------------- | -------------------------------------------- |
-| [avg](https://www.w3.org/TR/xquery-operators/#func-avg) | Returns the average of a sequence of values. |
-| [sum](https://www.w3.org/TR/xquery-operators/#func-sum) | Returns the sum of a sequence of values.     |
-
 
 ### Functions and Operators that Generate Sequences
 

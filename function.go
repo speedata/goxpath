@@ -55,6 +55,22 @@ func fnAbs(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{math.Abs(itm)}, err
 }
 
+func fnAvg(ctx *Context, args []Sequence) (Sequence, error) {
+	arg := args[0]
+	if len(arg) == 0 {
+		return Sequence{}, nil
+	}
+	sum := 0.0
+	for _, itm := range arg {
+		n, err := NumberValue(Sequence{itm})
+		if err != nil {
+			return nil, err
+		}
+		sum += n
+	}
+	return Sequence{sum / float64(len(arg))}, nil
+}
+
 func fnBoolean(ctx *Context, args []Sequence) (Sequence, error) {
 	bv, err := BooleanValue(args[0])
 	return Sequence{bv}, err
@@ -159,8 +175,38 @@ func fnCurrentTime(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{XSTime(currentTimeGetter())}, nil
 }
 
+func fnDistinctValues(ctx *Context, args []Sequence) (Sequence, error) {
+	arg := args[0]
+	if len(arg) == 0 {
+		return Sequence{}, nil
+	}
+	seen := make(map[any]bool)
+	result := Sequence{}
+	for _, itm := range arg {
+		// Convert to comparable value
+		var key any
+		switch v := itm.(type) {
+		case *goxml.Attribute:
+			key = v.Value
+		case *goxml.Element:
+			key, _ = StringValue(Sequence{v})
+		default:
+			key = itm
+		}
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, itm)
+		}
+	}
+	return result, nil
+}
+
 func fnEmpty(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{len(args[0]) == 0}, nil
+}
+
+func fnExists(ctx *Context, args []Sequence) (Sequence, error) {
+	return Sequence{len(args[0]) > 0}, nil
 }
 
 func fnEndsWith(ctx *Context, args []Sequence) (Sequence, error) {
@@ -173,7 +219,6 @@ func fnEndsWith(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, err
 	}
 	return Sequence{strings.HasSuffix(firstarg, secondarg)}, nil
-
 }
 
 func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
@@ -184,6 +229,109 @@ func fnFloor(ctx *Context, args []Sequence) (Sequence, error) {
 	seq := args[0]
 	itm, err := NumberValue(seq)
 	return Sequence{math.Floor(itm)}, err
+}
+
+func fnFormatNumber(ctx *Context, args []Sequence) (Sequence, error) {
+	if len(args[0]) == 0 {
+		return Sequence{""}, nil
+	}
+	num, err := NumberValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	picture, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the picture string
+	// Format: [prefix]<integer-part>[.<fraction-part>][suffix]
+	// Special characters: # (optional digit), 0 (required digit), . (decimal), , (grouping)
+
+	decimalSep := '.'
+	groupingSep := ','
+	minusSign := '-'
+
+	// Find decimal point position in picture
+	decimalPos := strings.IndexRune(picture, decimalSep)
+
+	var intPart, fracPart string
+	if decimalPos >= 0 {
+		intPart = picture[:decimalPos]
+		fracPart = picture[decimalPos+1:]
+	} else {
+		intPart = picture
+		fracPart = ""
+	}
+
+	// Count required digits (0) and optional digits (#) in fraction part
+	fracDigits := 0
+	for _, r := range fracPart {
+		if r == '0' || r == '#' {
+			fracDigits++
+		}
+	}
+
+	// Count grouping in integer part
+	groupingSize := 0
+	lastGroupPos := strings.LastIndexFunc(intPart, func(r rune) bool { return r == groupingSep })
+	if lastGroupPos >= 0 {
+		// Count digits after last grouping separator
+		for _, r := range intPart[lastGroupPos+1:] {
+			if r == '0' || r == '#' {
+				groupingSize++
+			}
+		}
+	}
+
+	// Format the number
+	isNegative := num < 0
+	if isNegative {
+		num = -num
+	}
+
+	// Round to required fraction digits
+	multiplier := math.Pow(10, float64(fracDigits))
+	rounded := math.Round(num*multiplier) / multiplier
+
+	// Split into integer and fraction parts
+	intVal := int64(rounded)
+	fracVal := rounded - float64(intVal)
+
+	// Format integer part
+	intStr := fmt.Sprintf("%d", intVal)
+
+	// Add grouping separators
+	if groupingSize > 0 {
+		var grouped strings.Builder
+		for i, r := range intStr {
+			if i > 0 && (len(intStr)-i)%groupingSize == 0 {
+				grouped.WriteRune(groupingSep)
+			}
+			grouped.WriteRune(r)
+		}
+		intStr = grouped.String()
+	}
+
+	// Format fraction part
+	var result strings.Builder
+	if isNegative {
+		result.WriteRune(minusSign)
+	}
+	result.WriteString(intStr)
+
+	if fracDigits > 0 {
+		result.WriteRune(decimalSep)
+		fracStr := fmt.Sprintf("%.*f", fracDigits, fracVal)
+		// Remove "0." prefix from fracStr
+		if len(fracStr) > 2 {
+			result.WriteString(fracStr[2:])
+		} else {
+			result.WriteString(strings.Repeat("0", fracDigits))
+		}
+	}
+
+	return Sequence{result.String()}, nil
 }
 
 func fnHoursFromTime(ctx *Context, args []Sequence) (Sequence, error) {
@@ -197,6 +345,51 @@ func fnHoursFromTime(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, fmt.Errorf("The argument of hours-from-time must be xs:time")
 	}
 	return Sequence{time.Time(t).Format("15")}, nil
+}
+
+func fnIndexOf(ctx *Context, args []Sequence) (Sequence, error) {
+	seq := args[0]
+	search := args[1]
+	if len(seq) == 0 || len(search) == 0 {
+		return Sequence{}, nil
+	}
+
+	// Get the search value - must be a single atomic value
+	if len(search) != 1 {
+		return nil, fmt.Errorf("second argument of index-of must be a single atomic value")
+	}
+	searchVal := search[0]
+
+	// Convert search value to comparable form
+	var searchKey any
+	switch v := searchVal.(type) {
+	case *goxml.Attribute:
+		searchKey = v.Value
+	case float64, int, string, bool:
+		searchKey = v
+	default:
+		sv, _ := StringValue(search)
+		searchKey = sv
+	}
+
+	result := Sequence{}
+	for i, itm := range seq {
+		var itmKey any
+		switch v := itm.(type) {
+		case *goxml.Attribute:
+			itmKey = v.Value
+		case float64, int, string, bool:
+			itmKey = v
+		default:
+			sv, _ := StringValue(Sequence{itm})
+			itmKey = sv
+		}
+
+		if itmKey == searchKey {
+			result = append(result, i+1) // XPath uses 1-based indexing
+		}
+	}
+	return result, nil
 }
 
 func fnLast(ctx *Context, args []Sequence) (Sequence, error) {
@@ -376,7 +569,6 @@ func fnNamespaceURI(ctx *Context, args []Sequence) (Sequence, error) {
 	}
 	if attr, ok := arg[0].(*goxml.Attribute); ok {
 		return Sequence{attr.Namespace}, nil
-
 	}
 	return Sequence{""}, nil
 }
@@ -421,7 +613,6 @@ func fnReplace(ctx *Context, args []Sequence) (Sequence, error) {
 	rexpr, err := regexp.Compile(regex)
 	if err != nil {
 		return nil, fmt.Errorf("second argument of fn:replace must be a regular expression")
-
 	}
 
 	replace, err := StringValue(replaceSeq)
@@ -448,7 +639,7 @@ func fnReverse(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(inputSeq) == 0 {
 		return inputSeq, nil
 	}
-	var retSeq = make(Sequence, len(inputSeq))
+	retSeq := make(Sequence, len(inputSeq))
 	i := 0
 	l := len(inputSeq)
 	for {
@@ -492,6 +683,22 @@ func fnSecondsFromTime(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{time.Time(t).Format("05")}, nil
 }
 
+func fnSum(ctx *Context, args []Sequence) (Sequence, error) {
+	arg := args[0]
+	if len(arg) == 0 {
+		return Sequence{0.0}, nil
+	}
+	sum := 0.0
+	for _, itm := range arg {
+		n, err := NumberValue(Sequence{itm})
+		if err != nil {
+			return nil, err
+		}
+		sum += n
+	}
+	return Sequence{sum}, nil
+}
+
 func fnString(ctx *Context, args []Sequence) (Sequence, error) {
 	var arg Sequence
 	if len(args) == 0 {
@@ -516,7 +723,6 @@ func fnStartsWith(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, err
 	}
 	return Sequence{strings.HasPrefix(firstarg, secondarg)}, nil
-
 }
 
 func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {
@@ -618,6 +824,47 @@ func fnSubstringBefore(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{before}, nil
 }
 
+func fnSubsequence(ctx *Context, args []Sequence) (Sequence, error) {
+	sourceSeq := args[0]
+	if len(sourceSeq) == 0 {
+		return Sequence{}, nil
+	}
+
+	startLoc, err := NumberValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+
+	// XPath uses 1-based indexing, convert to 0-based
+	// Also handle rounding as per XPath spec: round half to even
+	startIdx := int(math.Round(startLoc)) - 1
+
+	var length int
+	if len(args) > 2 {
+		lengthVal, err := NumberValue(args[2])
+		if err != nil {
+			return nil, err
+		}
+		length = int(math.Round(lengthVal))
+	} else {
+		length = len(sourceSeq) - startIdx
+	}
+
+	// Handle negative start index
+	if startIdx < 0 {
+		length += startIdx
+		startIdx = 0
+	}
+
+	if startIdx >= len(sourceSeq) || length <= 0 {
+		return Sequence{}, nil
+	}
+
+	endIdx := min(startIdx+length, len(sourceSeq))
+
+	return sourceSeq[startIdx:endIdx], nil
+}
+
 func fnTranslate(ctx *Context, args []Sequence) (Sequence, error) {
 	firstarg, err := StringValue(args[0])
 	if err != nil {
@@ -702,6 +949,7 @@ func fnTokenize(ctx *Context, args []Sequence) (Sequence, error) {
 func init() {
 	multipleWSRegexp = regexp.MustCompile(`\s+`)
 	RegisterFunction(&Function{Name: "abs", Namespace: nsFN, F: fnAbs, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "avg", Namespace: nsFN, F: fnAvg, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "boolean", Namespace: nsFN, F: fnBoolean, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "ceiling", Namespace: nsFN, F: fnCeiling, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "codepoint-equal", Namespace: nsFN, F: fnCodepointEqual, MinArg: 2, MaxArg: 2})
@@ -713,11 +961,15 @@ func init() {
 	RegisterFunction(&Function{Name: "current-date", Namespace: nsFN, F: fnCurrentDate, MinArg: 0, MaxArg: 0})
 	RegisterFunction(&Function{Name: "current-dateTime", Namespace: nsFN, F: fnCurrentDateTime, MinArg: 0, MaxArg: 0})
 	RegisterFunction(&Function{Name: "current-time", Namespace: nsFN, F: fnCurrentTime, MinArg: 0, MaxArg: 0})
+	RegisterFunction(&Function{Name: "distinct-values", Namespace: nsFN, F: fnDistinctValues, MinArg: 1, MaxArg: 2})
 	RegisterFunction(&Function{Name: "empty", Namespace: nsFN, F: fnEmpty, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "exists", Namespace: nsFN, F: fnExists, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "ends-with", Namespace: nsFN, F: fnEndsWith, MinArg: 2, MaxArg: 2})
 	RegisterFunction(&Function{Name: "false", Namespace: nsFN, F: fnFalse})
 	RegisterFunction(&Function{Name: "floor", Namespace: nsFN, F: fnFloor, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "format-number", Namespace: nsFN, F: fnFormatNumber, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "hours-from-time", Namespace: nsFN, F: fnHoursFromTime, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "index-of", Namespace: nsFN, F: fnIndexOf, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "minutes-from-time", Namespace: nsFN, F: fnMinutesFromTime, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "seconds-from-time", Namespace: nsFN, F: fnSecondsFromTime, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "last", Namespace: nsFN, F: fnLast})
@@ -744,6 +996,8 @@ func init() {
 	RegisterFunction(&Function{Name: "substring", Namespace: nsFN, F: fnSubstring, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "substring-before", Namespace: nsFN, F: fnSubstringBefore, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "substring-after", Namespace: nsFN, F: fnSubstringAfter, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "subsequence", Namespace: nsFN, F: fnSubsequence, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "sum", Namespace: nsFN, F: fnSum, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "translate", Namespace: nsFN, F: fnTranslate, MinArg: 3, MaxArg: 3})
 	RegisterFunction(&Function{Name: "true", Namespace: nsFN, F: fnTrue})
 	RegisterFunction(&Function{Name: "tokenize", Namespace: nsFN, F: fnTokenize, MinArg: 2, MaxArg: 3})
@@ -769,22 +1023,30 @@ func getfunction(namespace, name string) *Function {
 }
 
 func callFunction(name string, arguments []Sequence, ctx *Context) (Sequence, error) {
-	parts := strings.Split(name, ":")
+	var prefix, localName string
+	if idx := strings.IndexByte(name, ':'); idx >= 0 {
+		prefix = name[:idx]
+		localName = name[idx+1:]
+	} else {
+		localName = name
+	}
+	return callFunctionResolved(prefix, localName, arguments, ctx)
+}
+
+func callFunctionResolved(prefix, localName string, arguments []Sequence, ctx *Context) (Sequence, error) {
 	var ns string
-	var ok bool
-	if len(parts) == 2 {
-		if ns, ok = ctx.Namespaces[parts[0]]; ok {
-			name = parts[1]
-		} else {
-			return nil, fmt.Errorf("Could not find namespace for prefix %q", parts[0])
+	if prefix != "" {
+		var ok bool
+		if ns, ok = ctx.Namespaces[prefix]; !ok {
+			return nil, fmt.Errorf("Could not find namespace for prefix %q", prefix)
 		}
 	} else {
 		ns = nsFN
 	}
 
-	fn := getfunction(ns, name)
+	fn := getfunction(ns, localName)
 	if fn == nil {
-		return nil, fmt.Errorf("Could not find function %q in namespace %q", name, ns)
+		return nil, fmt.Errorf("Could not find function %q in namespace %q", localName, ns)
 	}
 	if min := fn.MinArg; min > 0 {
 		if len(arguments) < min {
