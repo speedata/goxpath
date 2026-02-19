@@ -3,6 +3,7 @@ package goxpath
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -247,8 +248,26 @@ func (tl *Tokenlist) skipNCName(name string) error {
 }
 
 func getNum(sr *strings.Reader) float64 {
-	var f float64
-	fmt.Fscanf(sr, "%f", &f)
+	var buf []byte
+	hasExp := false
+	for {
+		r, _, err := sr.ReadRune()
+		if err != nil {
+			break
+		}
+		if r >= '0' && r <= '9' || r == '.' {
+			buf = append(buf, byte(r))
+		} else if (r == 'e' || r == 'E') && !hasExp {
+			buf = append(buf, byte(r))
+			hasExp = true
+		} else if (r == '+' || r == '-') && hasExp && len(buf) > 0 && (buf[len(buf)-1] == 'e' || buf[len(buf)-1] == 'E') {
+			buf = append(buf, byte(r))
+		} else {
+			sr.UnreadRune()
+			break
+		}
+	}
+	f, _ := strconv.ParseFloat(string(buf), 64)
 	return f
 }
 

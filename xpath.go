@@ -83,7 +83,7 @@ func CopyContext(cur *Context) *Context {
 		ctx.ctxLengths = append(ctx.ctxLengths, l)
 	}
 	for _, l := range cur.ctxPositions {
-		ctx.ctxLengths = append(ctx.ctxPositions, l)
+		ctx.ctxPositions = append(ctx.ctxPositions, l)
 	}
 	return ctx
 }
@@ -221,11 +221,25 @@ func returnAttributeNameTest(name string) func(*Context, Item) bool {
 }
 
 func returnElementNameTest(name string) func(*Context, Item) bool {
+	// Pre-split the name once instead of on every call.
+	parts := strings.SplitN(name, ":", 2)
+	var prefix, localName string
+	if len(parts) == 2 {
+		prefix = parts[0]
+		localName = parts[1]
+	} else {
+		localName = parts[0]
+	}
+
 	return func(ctx *Context, itm Item) bool {
 		if elt, ok := itm.(*goxml.Element); ok {
-			testName := rNameFromString(ctx.Namespaces, name)
-			eltName := rName{uri: elt.Namespaces[elt.Prefix], localName: elt.Name}
-			return eltName.localName == testName.localName && eltName.uri == testName.uri
+			if elt.Name != localName {
+				return false
+			}
+			if prefix != "" {
+				return elt.Namespaces[elt.Prefix] == ctx.Namespaces[prefix]
+			}
+			return true
 		}
 		return false
 	}
@@ -240,43 +254,16 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 		positions = ctx.ctxPositions
 		lengths = ctx.ctxLengths
 	} else {
-		positions = make([]int, len(ctx.sequence))
-		lengths = make([]int, len(ctx.sequence))
-		for i := 0; i < len(ctx.sequence); i++ {
+		n := len(ctx.sequence)
+		positions = make([]int, n)
+		lengths = make([]int, n)
+		for i := 0; i < n; i++ {
 			positions[i] = i + 1
-			lengths[i] = 1
+			lengths[i] = n
 		}
 	}
 
 	copyContext := ctx.sequence
-	predicate, err := filter(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// [1] is the same as "position() = 1"
-	if len(predicate) == 1 {
-		var predicateIsNum bool
-		var predicateNum int
-		if p0, ok := predicate[0].(float64); ok {
-			predicateIsNum = true
-			predicateNum = int(p0)
-		} else if p0, ok := predicate[0].(int); ok {
-			predicateIsNum = true
-			predicateNum = p0
-		}
-		if predicateIsNum {
-			var seq Sequence
-			for i, itm := range ctx.sequence {
-				pos := positions[i]
-				if predicateNum == pos {
-					seq = append(seq, itm)
-				}
-			}
-			ctx.sequence = seq
-			return seq, nil
-		}
-	}
 
 	for i, itm := range copyContext {
 		ctx.sequence = Sequence{itm}
@@ -290,6 +277,31 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// On first item, check if the predicate returns a number.
+		// [1] is the same as "position() = 1"
+		if i == 0 && len(predicate) == 1 {
+			var predicateNum int
+			var isNum bool
+			if p0, ok := predicate[0].(float64); ok {
+				predicateNum = int(p0)
+				isNum = true
+			} else if p0, ok := predicate[0].(int); ok {
+				predicateNum = p0
+				isNum = true
+			}
+			if isNum {
+				var seq Sequence
+				for j, jitm := range copyContext {
+					if predicateNum == positions[j] {
+						seq = append(seq, jitm)
+					}
+				}
+				ctx.sequence = seq
+				return seq, nil
+			}
+		}
+
 		evalItem, err := BooleanValue(predicate)
 		if err != nil {
 			return nil, err
@@ -333,21 +345,21 @@ func itemStringvalue(itm Item) string {
 	var ret string
 	switch t := itm.(type) {
 	case float64:
-		ret = fmt.Sprintf("%f", t)
+		ret = strconv.FormatFloat(t, 'f', -1, 64)
 	case int:
-		ret = fmt.Sprintf("%d", t)
+		ret = strconv.Itoa(t)
 	case []uint8:
-		ret = fmt.Sprintf("%s", t)
+		ret = string(t)
 	case *goxml.Attribute:
-		ret = fmt.Sprintf(t.Value)
+		ret = t.Value
 	case *goxml.Element:
-		ret = fmt.Sprint(t.Stringvalue())
+		ret = t.Stringvalue()
 	case goxml.Comment:
-		ret = fmt.Sprint(t.Contents)
+		ret = t.Contents
 	case goxml.ProcInst:
-		ret = fmt.Sprint(string(t.Inst))
+		ret = string(t.Inst)
 	case *goxml.ProcInst:
-		ret = fmt.Sprint(string(t.Inst))
+		ret = string(t.Inst)
 	case goxml.CharData:
 		ret = t.Contents
 	case []goxml.XMLNode:
@@ -648,6 +660,13 @@ func NumberValue(s Sequence) (float64, error) {
 
 	if flt, ok := firstItem.(float64); ok {
 		return flt, nil
+	}
+	if str, ok := firstItem.(string); ok {
+		numberF, err := strconv.ParseFloat(str, 64)
+		if err != nil {
+			return math.NaN(), nil
+		}
+		return numberF, nil
 	}
 	return math.NaN(), nil
 }
@@ -2302,10 +2321,19 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 		return nil, err
 	}
 	fn := functionNameToken.Value.(string)
+	// Pre-split function name to avoid splitting on every call.
+	var fnPrefix, fnLocalName string
+	if idx := strings.IndexByte(fn, ':'); idx >= 0 {
+		fnPrefix = fn[:idx]
+		fnLocalName = fn[idx+1:]
+	} else {
+		fnLocalName = fn
+	}
+
 	if tl.nexttokIsTyp(tokCloseParen) {
 		tl.read()
 		ef = func(ctx *Context) (Sequence, error) {
-			return callFunction(fn, []Sequence{}, ctx)
+			return callFunctionResolved(fnPrefix, fnLocalName, []Sequence{}, ctx)
 		}
 		leaveStep(tl, "48 parseFunctionCall (a)")
 		return ef, nil
@@ -2343,7 +2371,7 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 			ctx.SetContextSequence(saveContext)
 		}
 
-		return callFunction(fn, arguments, ctx)
+		return callFunctionResolved(fnPrefix, fnLocalName, arguments, ctx)
 	}
 
 	leaveStep(tl, "48 parseFunctionCall")
