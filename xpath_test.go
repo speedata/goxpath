@@ -195,14 +195,46 @@ func TestEval(t *testing.T) {
 		{`empty( /root/@doesnotexist )`, Sequence{true}},
 		{`empty( /root/@empty )`, Sequence{false}},
 		{`empty( /root/@one )`, Sequence{false}},
+		{`string(data(/root/sub[1]))`, Sequence{"123"}},
+		{`data( (1, 'hello', 3.5) )`, Sequence{1.0, "hello", 3.5}},
+		{`day-from-date(xs:date("2004-05-12"))`, Sequence{12}},
+		{`day-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{12}},
+		{`days-from-duration(xs:duration("P3DT10H"))`, Sequence{3}},
+		{`days-from-duration(xs:duration("-P3DT10H"))`, Sequence{-3}},
+		{`hours-from-duration(xs:duration("P3DT10H"))`, Sequence{10}},
+		{`hours-from-duration(xs:duration("-PT10H"))`, Sequence{-10}},
+		{`minutes-from-duration(xs:duration("P3DT10H30M"))`, Sequence{30}},
+		{`months-from-duration(xs:duration("P1Y6M"))`, Sequence{6}},
+		{`months-from-duration(xs:duration("-P1Y6M"))`, Sequence{-6}},
+		{`seconds-from-duration(xs:duration("PT1M30.5S"))`, Sequence{30.5}},
+		{`years-from-duration(xs:duration("P3Y6M"))`, Sequence{3}},
+		{`years-from-duration(xs:duration("-P3Y"))`, Sequence{-3}},
+		{`year-from-date(xs:date("2004-05-12"))`, Sequence{2004}},
+		{`year-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{2004}},
+		{`month-from-date(xs:date("2004-05-12"))`, Sequence{5}},
+		{`month-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{5}},
+		{`hours-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{18}},
+		{`minutes-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{17}},
+		{`seconds-from-dateTime(xs:dateTime("2004-05-12T18:17:15"))`, Sequence{15.0}},
+		{`encode-for-uri("http://example.com/~bébé")`, Sequence{"http%3A%2F%2Fexample.com%2F~b%C3%A9b%C3%A9"}},
+		{`encode-for-uri("100% organic")`, Sequence{"100%25%20organic"}},
+		{`encode-for-uri("")`, Sequence{""}},
+		{`deep-equal( (1, 2, 3), (1, 2, 3) )`, Sequence{true}},
+		{`deep-equal( (1, 2, 3), (1, 2) )`, Sequence{false}},
+		{`deep-equal( ('a', 'b'), ('a', 'b') )`, Sequence{true}},
+		{`deep-equal( ('a', 'b'), ('a', 'c') )`, Sequence{false}},
+		{`deep-equal( (), () )`, Sequence{true}},
 		{`ends-with("tattoo", "too")   `, Sequence{true}},
 		{`ends-with("tattoo", "ott")   `, Sequence{false}},
+		{`exactly-one( ('a') )`, Sequence{"a"}},
 		{`floor(1.0)`, Sequence{1.0}},
 		{`floor(1.6)`, Sequence{1.0}},
 		{`floor(17 div 3)`, Sequence{5.0}},
 		{`floor(-3)`, Sequence{-3.0}},
 		{`floor(-8.2e0 )`, Sequence{-9.0}},
 		{`floor( -0.5e0 )`, Sequence{-1.0}},
+		{`escape-html-uri("http://example.com/test#car")`, Sequence{"http://example.com/test#car"}},
+		{`escape-html-uri("javascript:if (navigator.browserLanguage == 'fr') window.open('http://example.com/français');")`, Sequence{"javascript:if (navigator.browserLanguage == 'fr') window.open('http://example.com/fran%C3%A7ais');"}},
 		{`string(floor('xxx' ))`, Sequence{"NaN"}},
 		{`string(/root/sub[last()])`, Sequence{"contents sub3subsub"}},
 		{`/root/local-name()`, Sequence{"root"}},
@@ -244,11 +276,18 @@ func TestEval(t *testing.T) {
 		{`index-of( ('a', 'b', 'c'), 'b' )`, Sequence{2}},
 		{`index-of( (1, 2, 3), 5 )`, Sequence{}},
 		{`index-of( (), 1 )`, Sequence{}},
+		{`insert-before( ('a', 'b', 'c'), 2, 'x' )`, Sequence{"a", "x", "b", "c"}},
+		{`insert-before( ('a', 'b', 'c'), 1, 'x' )`, Sequence{"x", "a", "b", "c"}},
+		{`insert-before( ('a', 'b', 'c'), 10, 'x' )`, Sequence{"a", "b", "c", "x"}},
+		{`insert-before( (), 1, 'x' )`, Sequence{"x"}},
 		{`format-number( 1234.5, '#,##0.00' )`, Sequence{"1,234.50"}},
 		{`format-number( 1234567, '#,###' )`, Sequence{"1,234,567"}},
 		{`format-number( 0.5, '0.00' )`, Sequence{"0.50"}},
 		{`format-number( -1234, '#,##0' )`, Sequence{"-1,234"}},
+		{`iri-to-uri("http://www.example.com/~bébé")`, Sequence{"http://www.example.com/~b%C3%A9b%C3%A9"}},
+		{`iri-to-uri("http://example.com/path")`, Sequence{"http://example.com/path"}},
 		{`normalize-space('  foo bar    baz     ')`, Sequence{"foo bar baz"}},
+		{`normalize-unicode("ä")`, Sequence{"\u00e4"}},
 		{`not( 3 < 6 )`, Sequence{false}},
 		{`not( 6 < 3 )`, Sequence{true}},
 		{`replace("facetiously", "[aeiouy]", "[$0]")`, Sequence{"f[a]c[e]t[i][o][u]sl[y]"}},
@@ -262,6 +301,21 @@ func TestEval(t *testing.T) {
 		{`round(2.5)`, Sequence{3.0}},
 		{`round(-7.5)`, Sequence{-7.0}},
 		{`round(-7.5001)`, Sequence{-8.0}},
+		{`round-half-to-even(0.5)`, Sequence{0.0}},
+		{`round-half-to-even(1.5)`, Sequence{2.0}},
+		{`round-half-to-even(2.5)`, Sequence{2.0}},
+		{`round-half-to-even(3.567812e+3, 2)`, Sequence{3567.81}},
+		{`round-half-to-even(4.7564e-3, 2)`, Sequence{0.0}},
+		{`round-half-to-even(35612.25, -2)`, Sequence{35600.0}},
+		{`one-or-more( (1, 2) )`, Sequence{1.0, 2.0}},
+		{`one-or-more( ('a') )`, Sequence{"a"}},
+		{`remove( ('a', 'b', 'c'), 2 )`, Sequence{"a", "c"}},
+		{`remove( ('a', 'b', 'c'), 1 )`, Sequence{"b", "c"}},
+		{`remove( ('a', 'b', 'c'), 0 )`, Sequence{"a", "b", "c"}},
+		{`remove( (), 1 )`, Sequence{}},
+		{`unordered( (1, 2, 3) )`, Sequence{1.0, 2.0, 3.0}},
+		{`zero-or-one( () )`, Sequence{}},
+		{`zero-or-one( ('a') )`, Sequence{"a"}},
 		{`starts-with("tattoo", "tat")   `, Sequence{true}},
 		{`starts-with("tattoo", "att")   `, Sequence{false}},
 		{`string-join(('a', 'b', 'c'), ', ')`, Sequence{"a, b, c"}},
@@ -347,12 +401,28 @@ func TestEval(t *testing.T) {
 		{`/root/sub[1]/attribute()/string() `, Sequence{"baz", "somevalue"}},
 		{`/root/sub[1]/attribute(*)/string() `, Sequence{"baz", "somevalue"}},
 		{`/root/sub[1]/attribute(foo)/string() `, Sequence{"baz"}},
+		{`string(QName("http://example.com/ns", "foo:bar"))`, Sequence{"foo:bar"}},
+		{`string(QName("", "bar"))`, Sequence{"bar"}},
+		{`local-name-from-QName(QName("http://example.com/ns", "foo:bar"))`, Sequence{"bar"}},
+		{`prefix-from-QName(QName("http://example.com/ns", "foo:bar"))`, Sequence{"foo"}},
+		{`prefix-from-QName(QName("", "bar"))`, Sequence{}},
+		{`namespace-uri-from-QName(QName("http://example.com/ns", "foo:bar"))`, Sequence{"http://example.com/ns"}},
+		{`namespace-uri-from-QName(QName("", "bar"))`, Sequence{""}},
 		{`text`, Sequence{}},
 		{`count(/)`, Sequence{1}},
 		{`string(/comment())`, Sequence{" comment "}},
 		{`string(/processing-instruction())`, Sequence{"text "}},
 		{`string(/processing-instruction(pi))`, Sequence{"text "}},
 		{`string(/processing-instruction(doesnotexist))`, Sequence{""}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07T15:00:00.000+00:00"}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("-PT10H")))`, Sequence{"2002-03-07T05:00:00.000-10:00"}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT5H30M")))`, Sequence{"2002-03-07T20:30:00.000+05:30"}},
+		{`string(adjust-date-to-timezone(xs:date("2002-03-07-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07+00:00"}},
+		{`string(adjust-time-to-timezone(xs:time("10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"15:00:00.000+00:00"}},
+		{`doc-available("nonexistent-file-xyz.xml")`, Sequence{false}},
+		{`resolve-uri("bar", "http://example.com/foo/")`, Sequence{"http://example.com/foo/bar"}},
+		{`resolve-uri("../bar", "http://example.com/foo/baz")`, Sequence{"http://example.com/bar"}},
+		{`resolve-uri("http://example.com/abs", "http://other.com/")`, Sequence{"http://example.com/abs"}},
 	}
 
 	for _, td := range testdata {
@@ -374,10 +444,52 @@ func TestEval(t *testing.T) {
 		}
 		seq, err := np.Evaluate(td.input)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 		}
 		if got, want := len(seq), len(td.result); got != want {
 			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
+		}
+		for i, itm := range seq {
+			if itm != td.result[i] {
+				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
+			}
+		}
+	}
+}
+
+func TestLang(t *testing.T) {
+	langDoc := `<root xml:lang="en">
+  <p>English</p>
+  <div xml:lang="de">
+    <p>German</p>
+  </div>
+</root>`
+	testdata := []struct {
+		input  string
+		result Sequence
+	}{
+		{`lang("en", /root)`, Sequence{true}},
+		{`lang("en", /root/p)`, Sequence{true}},
+		{`lang("EN", /root)`, Sequence{true}},
+		{`lang("de", /root/div)`, Sequence{true}},
+		{`lang("de", /root/div/p)`, Sequence{true}},
+		{`lang("en", /root/div)`, Sequence{false}},
+		{`lang("fr", /root)`, Sequence{false}},
+	}
+	for _, td := range testdata {
+		sr := strings.NewReader(langDoc)
+		np, err := NewParser(sr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq, err := np.Evaluate(td.input)
+		if err != nil {
+			t.Errorf("error evaluating %s: %v", td.input, err)
+			continue
+		}
+		if got, want := len(seq), len(td.result); got != want {
+			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
+			continue
 		}
 		for i, itm := range seq {
 			if itm != td.result[i] {
@@ -396,6 +508,10 @@ func TestNSEval(t *testing.T) {
 		result Sequence
 	}{
 		{`string(/a:root/a:sub)`, Sequence{"text"}},
+		{`local-name-from-QName(resolve-QName("a:sub", /a:root))`, Sequence{"sub"}},
+		{`namespace-uri-from-QName(resolve-QName("a:sub", /a:root))`, Sequence{"anamespace"}},
+		{`namespace-uri-for-prefix("a", /a:root)`, Sequence{"anamespace"}},
+		{`namespace-uri-for-prefix("xml", /a:root)`, Sequence{"http://www.w3.org/XML/1998/namespace"}},
 	}
 	for _, td := range testdata {
 		sr := strings.NewReader(nsDoc)
@@ -407,7 +523,7 @@ func TestNSEval(t *testing.T) {
 
 		seq, err := np.Evaluate(td.input)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 		}
 		if got, want := len(seq), len(td.result); got != want {
 			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)

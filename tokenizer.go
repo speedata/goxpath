@@ -37,6 +37,10 @@ const (
 	// tokDoubleColon represents a word with two colons a the end (axis for
 	// example)
 	tokDoubleColon
+	// tokOpenBrace is an opening curly brace {.
+	tokOpenBrace
+	// tokCloseBrace is a closing curly brace }.
+	tokCloseBrace
 )
 
 func (tt tokenType) String() string {
@@ -63,6 +67,10 @@ func (tt tokenType) String() string {
 		return "QName"
 	case tokComma:
 		return "comma"
+	case tokOpenBrace:
+		return "open brace"
+	case tokCloseBrace:
+		return "close brace"
 	}
 	return "--"
 }
@@ -102,6 +110,10 @@ func (tok token) String() string {
 		return "["
 	case tokCloseBracket:
 		return "]"
+	case tokOpenBrace:
+		return "{"
+	case tokCloseBrace:
+		return "}"
 	}
 
 	switch v := tok.Value.(type) {
@@ -399,8 +411,23 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 				sr.UnreadRune()
 				tokens = append(tokens, token{".", tokOperator})
 			}
-		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '|' || r == '=' {
+		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '=' {
 			tokens = append(tokens, token{string(r), tokOperator})
+		} else if r == '|' {
+			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{"|", tokOperator})
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if nextRune == '|' {
+				tokens = append(tokens, token{"||", tokOperator})
+			} else {
+				tokens = append(tokens, token{"|", tokOperator})
+				sr.UnreadRune()
+			}
 		} else if r == ',' {
 			tokens = append(tokens, token{string(r), tokComma})
 		} else if r == '>' || r == '<' {
@@ -498,6 +525,10 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 			}
 		} else if r == ')' {
 			tokens = append(tokens, token{r, tokCloseParen})
+		} else if r == '{' {
+			tokens = append(tokens, token{r, tokOpenBrace})
+		} else if r == '}' {
+			tokens = append(tokens, token{r, tokCloseBrace})
 		} else {
 			return nil, fmt.Errorf("Invalid char for xpath expression %q", string(r))
 		}

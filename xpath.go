@@ -54,6 +54,8 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	}
 	ctx.Namespaces["fn"] = nsFN
 	ctx.Namespaces["xs"] = nsXS
+	ctx.Namespaces["map"] = nsMap
+	ctx.Namespaces["array"] = nsArray
 	return ctx
 }
 
@@ -403,6 +405,21 @@ func (s Sequence) Stringvalue() string {
 	return sb.String()
 }
 
+// StringvalueJoin returns the string values of all items joined by sep.
+func (s Sequence) StringvalueJoin(sep string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, itm := range s {
+		if i > 0 {
+			sb.WriteString(sep)
+		}
+		sb.WriteString(itemStringvalue(itm))
+	}
+	return sb.String()
+}
+
 // IntValue returns the sequence value as an integer.
 func (s Sequence) IntValue() (int, error) {
 	if len(s) > 1 {
@@ -531,9 +548,17 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		dtLeft = xString
 		stringLeft = attLeft.Stringvalue()
 	}
+	if eltLeft, ok := a.(*goxml.Element); ok {
+		dtLeft = xString
+		stringLeft = eltLeft.Stringvalue()
+	}
 	if attRight, ok := b.(*goxml.Attribute); ok {
 		dtRight = xString
 		stringRight = attRight.Stringvalue()
+	}
+	if eltRight, ok := b.(*goxml.Element); ok {
+		dtRight = xString
+		stringRight = eltRight.Stringvalue()
 	}
 
 	if dtLeft == xDouble && dtRight == xDouble {
@@ -567,16 +592,34 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		}
 		return doCompareFloat(op, floatLeft, floatRight)
 	}
+	if dtLeft == xInteger && dtRight == xString {
+		var err error
+		floatRight, err = strconv.ParseFloat(stringRight, 64)
+		if err != nil {
+			return false, err
+		}
+		return doCompareFloat(op, float64(intLeft), floatRight)
+	}
+	if dtLeft == xString && dtRight == xInteger {
+		var err error
+		floatLeft, err = strconv.ParseFloat(stringLeft, 64)
+		if err != nil {
+			return false, err
+		}
+		return doCompareFloat(op, floatLeft, float64(intRight))
+	}
 
 	return false, fmt.Errorf("FORG0001")
 }
 
 func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 	f := func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		left, err := lhs(ctx)
 		if err != nil {
 			return nil, err
 		}
+		ctx.sequence = savedSeq
 		right, err := rhs(ctx)
 		if err != nil {
 			return nil, err
@@ -657,6 +700,13 @@ func NumberValue(s Sequence) (float64, error) {
 		}
 		return numberF, nil
 	}
+	if elt, ok := firstItem.(*goxml.Element); ok {
+		numberF, err := strconv.ParseFloat(elt.Stringvalue(), 64)
+		if err != nil {
+			return math.NaN(), nil
+		}
+		return numberF, nil
+	}
 
 	if flt, ok := firstItem.(float64); ok {
 		return flt, nil
@@ -672,11 +722,16 @@ func NumberValue(s Sequence) (float64, error) {
 }
 
 // BooleanValue returns the effective boolean value of the sequence.
+// XPath 2.0 §2.4.3: if the first item is a node, returns true;
+// a single atomic value is converted to boolean; otherwise FORG0006.
 func BooleanValue(s Sequence) (bool, error) {
 	if len(s) == 0 {
 		return false, nil
 	}
-	// if s[0] is a node, return true
+	// If the first item is a node, return true (regardless of sequence length).
+	if _, ok := s[0].(goxml.XMLNode); ok {
+		return true, nil
+	}
 	if len(s) == 1 {
 		itm := s[0]
 		if b, ok := itm.(bool); ok {
@@ -688,10 +743,6 @@ func BooleanValue(s Sequence) (bool, error) {
 			return val != 0 && val == val, nil
 		} else if val, ok := itm.(int); ok {
 			return val != 0, nil
-		} else if isElement(nil, itm) {
-			return true, nil
-		} else {
-			fmt.Printf("itm %#v\n", itm)
 		}
 	}
 	return false, fmt.Errorf("FORG0006 Invalid argument type")
@@ -1173,7 +1224,7 @@ func parseAndExpr(tl *Tokenlist) (EvalFunc, error) {
 	return ef, nil
 }
 
-// [10] ComparisonExpr ::= RangeExpr ( (ValueComp | GeneralComp| NodeComp) RangeExpr )?
+// [10] ComparisonExpr ::= StringConcatExpr ( (ValueComp | GeneralComp| NodeComp) StringConcatExpr )?
 // [23] ValueComp ::= "eq" | "ne" | "lt" | "le" | "gt" | "ge"
 // [22] GeneralComp ::= "=" | "!=" | "<" | "<=" | ">" | ">="
 // [24] NodeComp ::= "is" | "<<" | ">>"
@@ -1181,13 +1232,13 @@ func parseComparisonExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "10 parseComparisonExpr")
 	var lhs, rhs EvalFunc
 	var err error
-	if lhs, err = parseRangeExpr(tl); err != nil {
+	if lhs, err = parseStringConcatExpr(tl); err != nil {
 		leaveStep(tl, "10 parseComparisonExpr")
 		return nil, err
 	}
 
 	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"=", "<", ">", "<=", ">=", "!=", "eq", "ne", "lt", "le", "gt", "ge"}); ok {
-		if rhs, err = parseRangeExpr(tl); err != nil {
+		if rhs, err = parseStringConcatExpr(tl); err != nil {
 			leaveStep(tl, "10 parseComparisonExpr")
 			return nil, err
 		}
@@ -1196,7 +1247,7 @@ func parseComparisonExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"is", "<<", ">>"}); ok {
-		if rhs, err = parseRangeExpr(tl); err != nil {
+		if rhs, err = parseStringConcatExpr(tl); err != nil {
 			leaveStep(tl, "10 parseComparisonExpr")
 			return nil, err
 		}
@@ -1206,6 +1257,47 @@ func parseComparisonExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	leaveStep(tl, "10 parseComparisonExpr")
 	return lhs, nil
+}
+
+// StringConcatExpr ::= RangeExpr ( "||" RangeExpr )*
+func parseStringConcatExpr(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "10a parseStringConcatExpr")
+	var efs []EvalFunc
+	for {
+		ef, err := parseRangeExpr(tl)
+		if err != nil {
+			leaveStep(tl, "10a parseStringConcatExpr (err)")
+			return nil, err
+		}
+		efs = append(efs, ef)
+		if _, ok := tl.readNexttokIfIsOneOfValue([]string{"||"}); !ok {
+			break
+		}
+	}
+
+	if len(efs) == 1 {
+		leaveStep(tl, "10a parseStringConcatExpr (#efs = 1)")
+		return efs[0], nil
+	}
+
+	ef := func(ctx *Context) (Sequence, error) {
+		var sb strings.Builder
+		for _, ef := range efs {
+			s, err := ef(ctx)
+			if err != nil {
+				return nil, err
+			}
+			sv, err := StringValue(s)
+			if err != nil {
+				return nil, err
+			}
+			sb.WriteString(sv)
+		}
+		return Sequence{sb.String()}, nil
+	}
+
+	leaveStep(tl, "10a parseStringConcatExpr")
+	return ef, nil
 }
 
 // [11] RangeExpr ::= AdditiveExpr ( "to" AdditiveExpr )?
@@ -1284,6 +1376,7 @@ func parseAdditiveExpr(tl *Tokenlist) (EvalFunc, error) {
 		return efs[0], nil
 	}
 	ef = func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		s, err := efs[0](ctx)
 		if err != nil {
 			return nil, err
@@ -1293,6 +1386,7 @@ func parseAdditiveExpr(tl *Tokenlist) (EvalFunc, error) {
 			return nil, err
 		}
 		for i := 1; i < len(efs); i++ {
+			ctx.sequence = savedSeq
 			s, err := efs[i](ctx)
 			if err != nil {
 				return nil, err
@@ -1337,6 +1431,7 @@ func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	ef = func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		s, err := efs[0](ctx)
 		if err != nil {
 			return nil, err
@@ -1346,6 +1441,7 @@ func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 			return nil, err
 		}
 		for i := 1; i < len(efs); i++ {
+			ctx.sequence = savedSeq
 			s, err := efs[i](ctx)
 			if err != nil {
 				return nil, err
@@ -1648,7 +1744,7 @@ func parseUnaryExpr(tl *Tokenlist) (EvalFunc, error) {
 	var hasOP bool
 	mult := 1
 	for {
-		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"+", "-"}); ok {
+		if op, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"+", "-"}, tokOperator); ok {
 			hasOP = true
 			if op == "-" {
 				mult *= -1
@@ -1707,7 +1803,7 @@ func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 	var rpe EvalFunc
 	var op string
 	var hasOP bool
-	op, hasOP = tl.readNexttokIfIsOneOfValue([]string{"/", "//"})
+	op, hasOP = tl.readNexttokIfIsOneOfValueAndType([]string{"/", "//"}, tokOperator)
 
 	rpe, err := parseRelativePathExpr(tl)
 	if err != nil {
@@ -1762,7 +1858,7 @@ func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 			return nil, err
 		}
 		efs = append(efs, ef)
-		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"/", "//"}); ok {
+		if op, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"/", "//"}, tokOperator); ok {
 			ops = append(ops, op)
 		} else {
 			break
@@ -2260,6 +2356,30 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
+	// Map constructor: map { key: value, ... }
+	if nexttok.Typ == tokQName && nexttok.Value.(string) == "map" && tl.nexttokIsTyp(tokOpenBrace) {
+		tl.read() // consume {
+		ef, err = parseMapConstructor(tl)
+		if err != nil {
+			leaveStep(tl, "41 parsePrimaryExpr (err map)")
+			return nil, err
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (map)")
+		return ef, nil
+	}
+
+	// Array constructor: array { expr, expr, ... }
+	if nexttok.Typ == tokQName && nexttok.Value.(string) == "array" && tl.nexttokIsTyp(tokOpenBrace) {
+		tl.read() // consume {
+		ef, err = parseArrayConstructor(tl)
+		if err != nil {
+			leaveStep(tl, "41 parsePrimaryExpr (err array)")
+			return nil, err
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (array)")
+		return ef, nil
+	}
+
 	// FunctionCall
 	if tl.nexttokIsTyp(tokOpenParen) {
 		tl.unread() // function name
@@ -2544,6 +2664,121 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 
 	leaveStep(tl, "54 parseKindTest")
 	return tf, nil
+}
+
+// parseMapConstructor parses key:value pairs after the opening { of map { ... }.
+// The opening { has already been consumed.
+func parseMapConstructor(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "parseMapConstructor")
+	type kvPair struct {
+		key   EvalFunc
+		value EvalFunc
+	}
+	var pairs []kvPair
+
+	if tl.nexttokIsTyp(tokCloseBrace) {
+		tl.read() // consume }
+		ef := func(ctx *Context) (Sequence, error) {
+			return Sequence{&XPathMap{}}, nil
+		}
+		leaveStep(tl, "parseMapConstructor (empty)")
+		return ef, nil
+	}
+
+	for {
+		keyEf, err := parseExprSingle(tl)
+		if err != nil {
+			leaveStep(tl, "parseMapConstructor (err key)")
+			return nil, err
+		}
+
+		// expect colon separator
+		if err = tl.skipType(tokOperator); err != nil {
+			leaveStep(tl, "parseMapConstructor (err colon)")
+			return nil, fmt.Errorf("':' expected in map constructor, got %v", err)
+		}
+
+		valueEf, err := parseExprSingle(tl)
+		if err != nil {
+			leaveStep(tl, "parseMapConstructor (err value)")
+			return nil, err
+		}
+
+		pairs = append(pairs, kvPair{key: keyEf, value: valueEf})
+
+		if tl.nexttokIsTyp(tokComma) {
+			tl.read() // consume comma
+		} else {
+			break
+		}
+	}
+
+	if err := tl.skipType(tokCloseBrace); err != nil {
+		leaveStep(tl, "parseMapConstructor (err close)")
+		return nil, fmt.Errorf("'}' expected in map constructor")
+	}
+
+	ef := func(ctx *Context) (Sequence, error) {
+		m := &XPathMap{}
+		for _, pair := range pairs {
+			keySeq, err := pair.key(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(keySeq) != 1 {
+				return nil, fmt.Errorf("map key must be a single item")
+			}
+			valueSeq, err := pair.value(ctx)
+			if err != nil {
+				return nil, err
+			}
+			m.Entries = append(m.Entries, MapEntry{Key: keySeq[0], Value: valueSeq})
+		}
+		return Sequence{m}, nil
+	}
+	leaveStep(tl, "parseMapConstructor")
+	return ef, nil
+}
+
+// parseArrayConstructor parses a curly array constructor: array { Expr? }.
+// The opening { has already been consumed.
+// Per XPath 3.1: each item in the evaluated sequence becomes a separate member.
+func parseArrayConstructor(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "parseArrayConstructor")
+
+	if tl.nexttokIsTyp(tokCloseBrace) {
+		tl.read() // consume }
+		ef := func(ctx *Context) (Sequence, error) {
+			return Sequence{&XPathArray{}}, nil
+		}
+		leaveStep(tl, "parseArrayConstructor (empty)")
+		return ef, nil
+	}
+
+	contentEf, err := parseExpr(tl)
+	if err != nil {
+		leaveStep(tl, "parseArrayConstructor (err)")
+		return nil, err
+	}
+
+	if err := tl.skipType(tokCloseBrace); err != nil {
+		leaveStep(tl, "parseArrayConstructor (err close)")
+		return nil, fmt.Errorf("'}' expected in array constructor")
+	}
+
+	ef := func(ctx *Context) (Sequence, error) {
+		seq, err := contentEf(ctx)
+		if err != nil {
+			return nil, err
+		}
+		arr := &XPathArray{Members: make([]Sequence, len(seq))}
+		for i, item := range seq {
+			arr.Members[i] = Sequence{item}
+		}
+		return Sequence{arr}, nil
+	}
+	leaveStep(tl, "parseArrayConstructor")
+	return ef, nil
 }
 
 // ParseXPath takes a previously created token list and returns a function that

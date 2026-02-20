@@ -1,6 +1,6 @@
 [![Go reference documentation](https://img.shields.io/badge/doc-go%20reference-73FA79)](https://pkg.go.dev/github.com/speedata/goxpath)
 
-XPath 2.0 package for Go.
+XPath 2.0+ package for Go, with XPath 3.1 maps and arrays.
 
 
 License: BSD-3-Clause License
@@ -118,6 +118,7 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | Function                                                      | Accessor     | Accepts                         | Returns   |
 | ------------------------------------------------------------- | ------------ | ------------------------------- | --------- |
 | [string](https://www.w3.org/TR/xquery-operators/#func-string) | string-value | an optional item or no argument | xs:string |
+| [data](https://www.w3.org/TR/xquery-operators/#func-data) | typed-value | zero or more items | a sequence of atomic values |
 
 
 ### Functions on Numeric Values
@@ -128,6 +129,7 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [ceiling](https://www.w3.org/TR/xquery-operators/#func-ceiling) | Returns the smallest number with no fractional part that is greater than or equal to the argument. |
 | [floor](https://www.w3.org/TR/xquery-operators/#func-floor)     | Returns the largest number with no fractional part that is less than or equal to the argument.     |
 | [round](https://www.w3.org/TR/xquery-operators/#func-round)     | Rounds to the nearest number with no fractional part.                                              |
+| [round-half-to-even](https://www.w3.org/TR/xquery-operators/#func-round-half-to-even) | Takes a number and a precision and returns a number rounded to the given precision. If the fractional part is exactly half, the result is the number whose least significant digit is even. |
 
 ### Functions to Assemble and Disassemble Strings
 
@@ -157,6 +159,10 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [upper-case](https://www.w3.org/TR/xquery-operators/#func-upper-case)           | Returns the upper-cased value of the argument.                                                                                                                                      |
 | [lower-case](https://www.w3.org/TR/xquery-operators/#func-lower-case)           | Returns the lower-cased value of the argument.                                                                                                                                      |
 | [translate](https://www.w3.org/TR/xquery-operators/#func-translate)             | Returns the first xs:string argument with occurrences of characters contained in the second argument replaced by the character at the corresponding position in the third argument. |
+| [normalize-unicode](https://www.w3.org/TR/xquery-operators/#func-normalize-unicode) | Returns the normalized value of the first argument in the normalization form specified by the second argument. |
+| [encode-for-uri](https://www.w3.org/TR/xquery-operators/#func-encode-for-uri)       | Returns the xs:string argument with certain characters escaped to enable the resulting string to be used as a path segment in a URI. |
+| [iri-to-uri](https://www.w3.org/TR/xquery-operators/#func-iri-to-uri)               | Returns the xs:string argument with certain characters escaped to enable the resulting string to be used as (part of) a URI. |
+| [escape-html-uri](https://www.w3.org/TR/xquery-operators/#func-escape-html-uri)     | Returns the xs:string argument with certain characters escaped in the manner that html user agents handle attribute values that expect URIs. |
 
 
 ### Functions Based on Substring Matching
@@ -198,10 +204,42 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 
 | Function                                                                            | Meaning                                    |
 | ----------------------------------------------------------------------------------- | ------------------------------------------ |
+| [years-from-duration](https://www.w3.org/TR/xquery-operators/#func-years-from-duration)       | Returns the year component of an xs:duration value.    |
+| [months-from-duration](https://www.w3.org/TR/xquery-operators/#func-months-from-duration)     | Returns the months component of an xs:duration value.  |
+| [days-from-duration](https://www.w3.org/TR/xquery-operators/#func-days-from-duration)         | Returns the days component of an xs:duration value.    |
+| [hours-from-duration](https://www.w3.org/TR/xquery-operators/#func-hours-from-duration)       | Returns the hours component of an xs:duration value.   |
+| [minutes-from-duration](https://www.w3.org/TR/xquery-operators/#func-minutes-from-duration)   | Returns the minutes component of an xs:duration value. |
+| [seconds-from-duration](https://www.w3.org/TR/xquery-operators/#func-seconds-from-duration)   | Returns the seconds component of an xs:duration value. |
+| [year-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-year-from-dateTime)         | Returns the year from an xs:dateTime value.            |
+| [month-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-month-from-dateTime)       | Returns the month from an xs:dateTime value.           |
+| [day-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-day-from-dateTime)           | Returns the day from an xs:dateTime value.             |
+| [hours-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-hours-from-dateTime)       | Returns the hours from an xs:dateTime value.           |
+| [minutes-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-minutes-from-dateTime)   | Returns the minutes from an xs:dateTime value.         |
+| [seconds-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-seconds-from-dateTime)   | Returns the seconds from an xs:dateTime value.         |
+| [timezone-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-timezone-from-dateTime) | Returns the timezone from an xs:dateTime value.        |
+| [year-from-date](https://www.w3.org/TR/xquery-operators/#func-year-from-date)                 | Returns the year from an xs:date value.                |
+| [month-from-date](https://www.w3.org/TR/xquery-operators/#func-month-from-date)               | Returns the month from an xs:date value.               |
+| [day-from-date](https://www.w3.org/TR/xquery-operators/#func-day-from-date)                   | Returns the day from an xs:date value.                 |
+| [timezone-from-date](https://www.w3.org/TR/xquery-operators/#func-timezone-from-date)         | Returns the timezone from an xs:date value.            |
 | [hours-from-time](https://www.w3.org/TR/xquery-operators/#func-hours-from-time)     | Returns the hours from an xs:time value.   |
 | [minutes-from-time](https://www.w3.org/TR/xquery-operators/#func-minutes-from-time) | Returns the minutes from an xs:time value. |
 | [seconds-from-time](https://www.w3.org/TR/xquery-operators/#func-seconds-from-time) | Returns the seconds from an xs:time value. |
+| [timezone-from-time](https://www.w3.org/TR/xquery-operators/#func-timezone-from-time)         | Returns the timezone from an xs:time value.            |
 
+
+### Functions on anyURI
+
+| Function                                                                | Meaning                                                                                      |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [resolve-uri](https://www.w3.org/TR/xquery-operators/#func-resolve-uri) | Returns an xs:anyURI representing an absolute xs:anyURI given a base URI and a relative URI. |
+
+### Timezone Adjustment Functions on Dates and Time Values
+
+| Function                                                                                                | Meaning                                                                        |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [adjust-dateTime-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-dateTime-to-timezone) | Adjusts an xs:dateTime value to a specific timezone, or to no timezone at all. |
+| [adjust-date-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-date-to-timezone)         | Adjusts an xs:date value to a specific timezone, or to no timezone at all.     |
+| [adjust-time-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-time-to-timezone)         | Adjusts an xs:time value to a specific timezone, or to no timezone at all.     |
 
 ### Functions on Nodes
 
@@ -210,6 +248,7 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [name](https://www.w3.org/TR/xquery-operators/#func-name)                   | Returns the name of the context node or the specified node as an xs:string.                                                                                                                                                     |
 | [namespace-uri](https://www.w3.org/TR/xquery-operators/#func-namespace-uri) | Returns the namespace URI as an xs:anyURI for the xs:QName of the argument node or the context node if the argument is omitted. This may be the URI corresponding to the zero-length string if the xs:QName is in no namespace. |
 | [local-name](https://www.w3.org/TR/xquery-operators/#func-local-name) | Returns the local name of the context node or the specified node as an xs:NCName.                            |
+| [lang](https://www.w3.org/TR/xquery-operators/#func-lang) | Returns true or false, depending on whether the language of the given node, as defined using the xml:lang attribute, is the same as, or a sublanguage of, the language specified by the argument. |
 | [number](https://www.w3.org/TR/xquery-operators/#func-number)         | Returns the value of the context item after atomization or the specified argument converted to an xs:double. |
 | [root](https://www.w3.org/TR/xquery-operators/#func-root)             | Returns the root of the tree to which the node argument belongs.                                             |
 
@@ -250,92 +289,73 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | [distinct-values](https://www.w3.org/TR/xquery-operators/#func-distinct-values) | Returns a sequence with duplicate values removed.                                           |
 | [index-of](https://www.w3.org/TR/xquery-operators/#func-index-of)               | Returns the positions of items in a sequence that match a given value.                      |
+| [insert-before](https://www.w3.org/TR/xquery-operators/#func-insert-before)     | Inserts an item or sequence of items at a specified position in a sequence.                 |
+| [remove](https://www.w3.org/TR/xquery-operators/#func-remove)                   | Removes an item from a specified position in a sequence.                                    |
+| [unordered](https://www.w3.org/TR/xquery-operators/#func-unordered)             | Returns the items in the given sequence in a non-deterministic order.                       |
 | [subsequence](https://www.w3.org/TR/xquery-operators/#func-subsequence)         | Returns the subsequence of a given sequence, identified by location.                        |
 
-### Formatting Functions
+### Functions That Test the Cardinality of Sequences
 
-| Function                                                                      | Meaning                                                    |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [format-number](https://www.w3.org/TR/xquery-operators/#func-format-number)   | Formats a number as a string using a picture string.       |
+| Function                                                                | Meaning                                                                                 |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [zero-or-one](https://www.w3.org/TR/xquery-operators/#func-zero-or-one) | Returns the input sequence if it contains zero or one items. Raises an error otherwise. |
+| [one-or-more](https://www.w3.org/TR/xquery-operators/#func-one-or-more) | Returns the input sequence if it contains one or more items. Raises an error otherwise. |
+| [exactly-one](https://www.w3.org/TR/xquery-operators/#func-exactly-one) | Returns the input sequence if it contains exactly one item. Raises an error otherwise.  |
 
+### Equals, Union, Intersection and Except
 
-## Not yet implemented functions
+| Function                                                              | Meaning                                                                                     |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [deep-equal](https://www.w3.org/TR/xquery-operators/#func-deep-equal) | Returns true if the two arguments have items that compare equal in corresponding positions. |
 
-###  Accessors
-| Function                                                                  | Accessor     | Accepts                         | Returns                     |
-| ------------------------------------------------------------------------- | ------------ | ------------------------------- | --------------------------- |
-| [node-name](https://www.w3.org/TR/xquery-operators/#func-node-name)       | node-name    | an optional node                | zero or one xs:QName        |
-| [nilled](https://www.w3.org/TR/xquery-operators/#func-nilled)             | nilled       | a node                          | an optional xs:boolean      |
-| [data](https://www.w3.org/TR/xquery-operators/#func-data)                 | typed-value  | zero or more items              | a sequence of atomic values |
-| [base-uri](https://www.w3.org/TR/xquery-operators/#func-base-uri)         | base-uri     | an optional node or no argument | zero or one xs:anyURI       |
-| [document-uri](https://www.w3.org/TR/xquery-operators/#func-document-uri) | document-uri | an optional node                | zero or one xs:anyURI       |
+### Functions and Operators that Generate Sequences
 
+| Function | Meaning |
+| -------- | ------- |
+| [doc](https://www.w3.org/TR/xquery-operators/#func-doc) | Returns a document node retrieved using the specified URI. |
+| [doc-available](https://www.w3.org/TR/xquery-operators/#func-doc-available) | Returns true if a document node can be retrieved using the specified URI. |
 
-### Functions on Numeric Values
+### Formatting Functions (XPath 3.0)
 
-| Function                                                                              | Accessor                                                                                                                                                                                    | Accepts | Returns |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| [round-half-to-even](https://www.w3.org/TR/xquery-operators/#func-round-half-to-even) | Takes a number and a precision and returns a number rounded to the given precision. If the fractional part is exactly half, the result is the number whose least significant digit is even. |
+| Function | Meaning |
+| -------- | ------- |
+| format-date | Formats an xs:date value using a picture string. |
+| [format-number](https://www.w3.org/TR/xquery-operators/#func-format-number) | Formats a number as a string using a picture string. |
 
+### Sorting (XPath 3.1)
 
-### Functions on String Values
+| Function | Meaning |
+| -------- | ------- |
+| sort | Returns a sorted copy of a sequence. |
 
-| Function                                                                            | Meaning                                                                                                                                      |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| [normalize-unicode](https://www.w3.org/TR/xquery-operators/#func-normalize-unicode) | Returns the normalized value of the first argument in the normalization form specified by the second argument.                               |
-| [encode-for-uri](https://www.w3.org/TR/xquery-operators/#func-encode-for-uri)       | Returns the xs:string argument with certain characters escaped to enable the resulting string to be used as a path segment in a URI.         |
-| [iri-to-uri](https://www.w3.org/TR/xquery-operators/#func-iri-to-uri)               | Returns the xs:string argument with certain characters escaped to enable the resulting string to be used as (part of) a URI.                 |
-| [escape-html-uri](https://www.w3.org/TR/xquery-operators/#func-escape-html-uri)     | Returns the xs:string argument with certain characters escaped in the manner that html user agents handle attribute values that expect URIs. |
+### XPath 3.1 Map Functions
 
+Namespace: `http://www.w3.org/2005/xpath-functions/map`
 
+| Function | Meaning |
+| -------- | ------- |
+| map:get | Returns the value associated with a key in a map. |
+| map:size | Returns the number of entries in a map. |
+| map:keys | Returns the keys of a map as a sequence. |
+| map:contains | Returns true if the map contains an entry with the given key. |
+| map:put | Returns a map with an added or replaced entry. |
+| map:merge | Returns a map that combines the entries from multiple maps. |
 
+### XPath 3.1 Array Functions
 
-### Functions on anyURI
+Namespace: `http://www.w3.org/2005/xpath-functions/array`
 
-| Function                                                                | Meaning                                                                                      |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [resolve-uri](https://www.w3.org/TR/xquery-operators/#func-resolve-uri) | Returns an xs:anyURI representing an absolute xs:anyURI given a base URI and a relative URI. |
+| Function | Meaning |
+| -------- | ------- |
+| array:get | Returns the member at a given position in an array. |
+| array:size | Returns the number of members in an array. |
 
-
-### Component Extraction Functions on Durations, Dates and Times
-
-| Function                                                                                      | Meaning                                                |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| [years-from-duration](https://www.w3.org/TR/xquery-operators/#func-years-from-duration)       | Returns the year component of an xs:duration value.    |
-| [months-from-duration](https://www.w3.org/TR/xquery-operators/#func-months-from-duration)     | Returns the months component of an xs:duration value.  |
-| [days-from-duration](https://www.w3.org/TR/xquery-operators/#func-days-from-duration)         | Returns the days component of an xs:duration value.    |
-| [hours-from-duration](https://www.w3.org/TR/xquery-operators/#func-hours-from-duration)       | Returns the hours component of an xs:duration value.   |
-| [minutes-from-duration](https://www.w3.org/TR/xquery-operators/#func-minutes-from-duration)   | Returns the minutes component of an xs:duration value. |
-| [seconds-from-duration](https://www.w3.org/TR/xquery-operators/#func-seconds-from-duration)   | Returns the seconds component of an xs:duration value. |
-| [year-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-year-from-dateTime)         | Returns the year from an xs:dateTime value.            |
-| [month-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-month-from-dateTime)       | Returns the month from an xs:dateTime value.           |
-| [day-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-day-from-dateTime)           | Returns the day from an xs:dateTime value.             |
-| [hours-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-hours-from-dateTime)       | Returns the hours from an xs:dateTime value.           |
-| [minutes-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-minutes-from-dateTime)   | Returns the minutes from an xs:dateTime value.         |
-| [seconds-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-seconds-from-dateTime)   | Returns the seconds from an xs:dateTime value.         |
-| [timezone-from-dateTime](https://www.w3.org/TR/xquery-operators/#func-timezone-from-dateTime) | Returns the timezone from an xs:dateTime value.        |
-| [year-from-date](https://www.w3.org/TR/xquery-operators/#func-year-from-date)                 | Returns the year from an xs:date value.                |
-| [month-from-date](https://www.w3.org/TR/xquery-operators/#func-month-from-date)               | Returns the month from an xs:date value.               |
-| [day-from-date](https://www.w3.org/TR/xquery-operators/#func-day-from-date)                   | Returns the day from an xs:date value.                 |
-| [timezone-from-date](https://www.w3.org/TR/xquery-operators/#func-timezone-from-date)         | Returns the timezone from an xs:date value.            |
-| [timezone-from-time](https://www.w3.org/TR/xquery-operators/#func-timezone-from-time)         | Returns the timezone from an xs:time value.            |
-
-###  Timezone Adjustment Functions on Dates and Time Values
-
-| Function                                                                                                | Meaning                                                                        |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [adjust-dateTime-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-dateTime-to-timezone) | Adjusts an xs:dateTime value to a specific timezone, or to no timezone at all. |
-| [adjust-date-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-date-to-timezone)         | Adjusts an xs:date value to a specific timezone, or to no timezone at all.     |
-| [adjust-time-to-timezone](https://www.w3.org/TR/xquery-operators/#func-adjust-time-to-timezone)         | Adjusts an xs:time value to a specific timezone, or to no timezone at all.     |
-
-
-### Additional Constructor Functions for QNames
+### Constructor Functions for QNames
 
 | Function                                                                    | Meaning                                                                                                                                          |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [resolve-QName](https://www.w3.org/TR/xquery-operators/#func-resolve-QName) | Returns an xs:QName with the lexical form given in the first argument. The prefix is resolved using the in-scope namespaces for a given element. |
 | [QName](https://www.w3.org/TR/xquery-operators/#func-qname)                 | Returns an xs:QName with the namespace URI given in the first argument and the local name and prefix in the second argument.                     |
-
 
 ### Functions Related to QNames
 
@@ -347,34 +367,30 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | [namespace-uri-for-prefix](https://www.w3.org/TR/xquery-operators/#func-namespace-uri-for-prefix) | Returns the namespace URI of one of the in-scope namespaces for the given element, identified by its namespace prefix.       |
 | [in-scope-prefixes](https://www.w3.org/TR/xquery-operators/#func-in-scope-prefixes)               | Returns the prefixes of the in-scope namespaces for the given element.                                                       |
 
+### XML Schema Type Constructors
 
-### Functions on Nodes
+| Function | Meaning |
+| -------- | ------- |
+| xs:integer | Cast to xs:integer. |
+| xs:double | Cast to xs:double. |
+| xs:string | Cast to xs:string. |
+| xs:date | Cast to xs:date. |
+| xs:dateTime | Cast to xs:dateTime. |
+| xs:duration | Cast to xs:duration. |
+| xs:time | Cast to xs:time. |
 
-| Function                                                  | Meaning                                                                                                                                                                                                               |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [lang](https://www.w3.org/TR/xquery-operators/#func-lang) | Returns true or false, depending on whether the language of the given node or the context node, as defined using the xml:lang attribute, is the same as, or a sublanguage of, the language specified by the argument. |
+## Not yet implemented functions
+
+###  Accessors
+| Function                                                                  | Accessor     | Accepts                         | Returns                     |
+| ------------------------------------------------------------------------- | ------------ | ------------------------------- | --------------------------- |
+| [node-name](https://www.w3.org/TR/xquery-operators/#func-node-name)       | node-name    | an optional node                | zero or one xs:QName        |
+| [nilled](https://www.w3.org/TR/xquery-operators/#func-nilled)             | nilled       | a node                          | an optional xs:boolean      |
+| [base-uri](https://www.w3.org/TR/xquery-operators/#func-base-uri)         | base-uri     | an optional node or no argument | zero or one xs:anyURI       |
+| [document-uri](https://www.w3.org/TR/xquery-operators/#func-document-uri) | document-uri | an optional node                | zero or one xs:anyURI       |
 
 
-| Function                                                                    | Meaning                                                                         |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [insert-before](https://www.w3.org/TR/xquery-operators/#func-insert-before) | Inserts an item or sequence of items at a specified position in a sequence.     |
-| [remove](https://www.w3.org/TR/xquery-operators/#func-remove)               | Removes an item from a specified position in a sequence.                        |
-| [unordered](https://www.w3.org/TR/xquery-operators/#func-unordered)         | Returns the items in the given sequence in a non-deterministic order.           |
 
-### Functions That Test the Cardinality of Sequences
-
-| Function                                                                | Meaning                                                                                 |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [zero-or-one](https://www.w3.org/TR/xquery-operators/#func-zero-or-one) | Returns the input sequence if it contains zero or one items. Raises an error otherwise. |
-| [one-or-more](https://www.w3.org/TR/xquery-operators/#func-one-or-more) | Returns the input sequence if it contains one or more items. Raises an error otherwise. |
-| [exactly-one](https://www.w3.org/TR/xquery-operators/#func-exactly-one) | Returns the input sequence if it contains exactly one item. Raises an error otherwise.  |
-
-
-### Equals, Union, Intersection and Except
-
-| Function                                                              | Meaning                                                                                     |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [deep-equal](https://www.w3.org/TR/xquery-operators/#func-deep-equal) | Returns true if the two arguments have items that compare equal in corresponding positions. |
 
 ### Functions and Operators that Generate Sequences
 
@@ -382,8 +398,6 @@ This list is copied from [XQuery 1.0 and XPath 2.0 Functions and Operators (Seco
 | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | [id](https://www.w3.org/TR/xquery-operators/#func-id)                       | Returns the sequence of element nodes having an ID value matching the one or more of the supplied IDREF values.        |
 | [idref](https://www.w3.org/TR/xquery-operators/#func-idref)                 | Returns the sequence of element or attribute nodes with an IDREF value matching one or more of the supplied ID values. |
-| [doc](https://www.w3.org/TR/xquery-operators/#func-doc)                     | Returns a document node retrieved using the specified URI.                                                             |
-| [doc-available](https://www.w3.org/TR/xquery-operators/#func-doc-available) | Returns true if a document node can be retrieved using the specified URI.                                              |
 | [collection](https://www.w3.org/TR/xquery-operators/#func-collection)       | Returns a sequence of nodes retrieved using the specified URI or the nodes in the default collection.                  |
 
 ### Context Functions
