@@ -962,6 +962,74 @@ func fnFormatNumber(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{result.String()}, nil
 }
 
+func fnFormatInteger(ctx *Context, args []Sequence) (Sequence, error) {
+	if len(args[0]) == 0 {
+		return Sequence{""}, nil
+	}
+	num, err := NumberValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	picture, err := StringValue(args[1])
+	if err != nil {
+		return nil, err
+	}
+	intVal := int(num)
+
+	switch {
+	case picture == "A":
+		return Sequence{formatIntegerAlpha(intVal, 'A')}, nil
+	case picture == "a":
+		return Sequence{formatIntegerAlpha(intVal, 'a')}, nil
+	case picture == "I":
+		return Sequence{formatRoman(intVal, true)}, nil
+	case picture == "i":
+		return Sequence{formatRoman(intVal, false)}, nil
+	default:
+		// Decimal picture: count digits to determine minimum width.
+		width := len(picture)
+		for _, r := range picture {
+			if r != '0' && r != '#' {
+				// Not a simple decimal picture, fall back to plain number.
+				return Sequence{fmt.Sprintf("%d", intVal)}, nil
+			}
+		}
+		return Sequence{fmt.Sprintf("%0*d", width, intVal)}, nil
+	}
+}
+
+func formatIntegerAlpha(n int, base rune) string {
+	if n <= 0 {
+		return fmt.Sprintf("%d", n)
+	}
+	var result []rune
+	for n > 0 {
+		n--
+		result = append([]rune{rune(int(base) + n%26)}, result...)
+		n /= 26
+	}
+	return string(result)
+}
+
+func formatRoman(n int, upper bool) string {
+	if n <= 0 || n >= 4000 {
+		return fmt.Sprintf("%d", n)
+	}
+	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+	syms := []string{"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"}
+	var sb strings.Builder
+	for i, v := range vals {
+		for n >= v {
+			sb.WriteString(syms[i])
+			n -= v
+		}
+	}
+	if upper {
+		return sb.String()
+	}
+	return strings.ToLower(sb.String())
+}
+
 func fnHoursFromTime(ctx *Context, args []Sequence) (Sequence, error) {
 	firstarg := args[0]
 	if len(firstarg) != 1 {
@@ -1389,13 +1457,10 @@ func fnNormalizeSpace(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(arg) > 1 {
 		return nil, fmt.Errorf("The cardinality of first argument of fn:normalize-string() is zero or one; supplied value has cardinality more than one")
 	}
-	itm := arg[0]
-	if str, ok := itm.(string); ok {
-		str = multipleWSRegexp.ReplaceAllString(str, " ")
-		str = strings.TrimSpace(str)
-		return Sequence{str}, nil
-	}
-	return Sequence{}, nil
+	str := itemStringvalue(arg[0])
+	str = multipleWSRegexp.ReplaceAllString(str, " ")
+	str = strings.TrimSpace(str)
+	return Sequence{str}, nil
 }
 
 func fnName(ctx *Context, args []Sequence) (Sequence, error) {
@@ -1962,30 +2027,6 @@ func fnSort(ctx *Context, args []Sequence) (Sequence, error) {
 	return result, nil
 }
 
-func fnCurrentGroupingKey(ctx *Context, args []Sequence) (Sequence, error) {
-	if ctx.Store == nil {
-		return Sequence{""}, nil
-	}
-	if key, ok := ctx.Store["current-grouping-key"]; ok {
-		if s, ok := key.(string); ok {
-			return Sequence{s}, nil
-		}
-	}
-	return Sequence{""}, nil
-}
-
-func fnCurrentGroup(ctx *Context, args []Sequence) (Sequence, error) {
-	if ctx.Store == nil {
-		return Sequence{}, nil
-	}
-	if group, ok := ctx.Store["current-group"]; ok {
-		if seq, ok := group.(Sequence); ok {
-			return seq, nil
-		}
-	}
-	return Sequence{}, nil
-}
-
 func init() {
 	multipleWSRegexp = regexp.MustCompile(`\s+`)
 	RegisterFunction(&Function{Name: "abs", Namespace: nsFN, F: fnAbs, MinArg: 1, MaxArg: 1})
@@ -2004,8 +2045,6 @@ func init() {
 	RegisterFunction(&Function{Name: "current-date", Namespace: nsFN, F: fnCurrentDate, MinArg: 0, MaxArg: 0})
 	RegisterFunction(&Function{Name: "current-dateTime", Namespace: nsFN, F: fnCurrentDateTime, MinArg: 0, MaxArg: 0})
 	RegisterFunction(&Function{Name: "current-time", Namespace: nsFN, F: fnCurrentTime, MinArg: 0, MaxArg: 0})
-	RegisterFunction(&Function{Name: "current-group", Namespace: nsFN, F: fnCurrentGroup, MinArg: 0, MaxArg: 0})
-	RegisterFunction(&Function{Name: "current-grouping-key", Namespace: nsFN, F: fnCurrentGroupingKey, MinArg: 0, MaxArg: 0})
 	RegisterFunction(&Function{Name: "data", Namespace: nsFN, F: fnData, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "deep-equal", Namespace: nsFN, F: fnDeepEqual, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "distinct-values", Namespace: nsFN, F: fnDistinctValues, MinArg: 1, MaxArg: 2})
@@ -2020,6 +2059,7 @@ func init() {
 	RegisterFunction(&Function{Name: "false", Namespace: nsFN, F: fnFalse})
 	RegisterFunction(&Function{Name: "floor", Namespace: nsFN, F: fnFloor, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "format-date", Namespace: nsFN, F: fnFormatDate, MinArg: 2, MaxArg: 5})
+	RegisterFunction(&Function{Name: "format-integer", Namespace: nsFN, F: fnFormatInteger, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "format-number", Namespace: nsFN, F: fnFormatNumber, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "day-from-date", Namespace: nsFN, F: fnDayFromDate, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "day-from-dateTime", Namespace: nsFN, F: fnDayFromDateTime, MinArg: 1, MaxArg: 1})

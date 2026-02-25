@@ -216,7 +216,11 @@ func (ctx *Context) parentAxis(tf testFunc) (Sequence, error) {
 	for _, n := range ctx.sequence {
 		switch t := n.(type) {
 		case *goxml.Element:
-			if tf(ctx, t.Parent) {
+			if t.Parent != nil && tf(ctx, t.Parent) {
+				seq = append(seq, t.Parent)
+			}
+		case *goxml.Attribute:
+			if t.Parent != nil && tf(ctx, t.Parent) {
 				seq = append(seq, t.Parent)
 			}
 		}

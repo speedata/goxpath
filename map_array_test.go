@@ -229,3 +229,35 @@ func TestArrayConstructorWithVariables(t *testing.T) {
 		t.Errorf("got %v, want [2]", seq)
 	}
 }
+
+func TestMapLookupSyntax(t *testing.T) {
+	sr := strings.NewReader(doc)
+	np, err := NewParser(sr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	np.SetVariable("month", Sequence{&XPathMap{
+		Entries: []MapEntry{
+			{Key: "1", Value: Sequence{"01"}},
+			{Key: "12", Value: Sequence{"12"}},
+		},
+	}})
+	np.SetVariable("m", Sequence{"12"})
+
+	seq, err := np.Evaluate(`$month($m)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seq) != 1 || seq[0] != "12" {
+		t.Errorf("got %v, want [12]", seq)
+	}
+
+	// Static key
+	seq, err = np.Evaluate(`$month('1')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seq) != 1 || seq[0] != "01" {
+		t.Errorf("got %v, want [01]", seq)
+	}
+}

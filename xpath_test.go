@@ -63,6 +63,8 @@ func TestEval(t *testing.T) {
 		{`string-to-codepoints( "hellö" ) `, Sequence{104, 101, 108, 108, 246}},
 		{`codepoints-to-string( (65,33*2,67) )`, Sequence{"ABC"}},
 		{`count(/root/other | /root/other)`, Sequence{2}},
+		{`count(/root/sub | /root/other)`, Sequence{5}},
+		{`count(/root/sub | /root/other | /root/a)`, Sequence{7}},
 		{`/root/@zzz instance of attribute()+`, Sequence{false}},
 		{`/root/@foo instance of attribute()+`, Sequence{true}},
 		{`/root/sub instance of element()?`, Sequence{false}},
@@ -161,7 +163,7 @@ func TestEval(t *testing.T) {
 		{`ceiling(17 div 3)`, Sequence{6.0}},
 		{`ceiling(-3)`, Sequence{-3.0}},
 		{`ceiling(-8.2e0 )`, Sequence{-8.0e0}},
-		{`ceiling( -0.5e0 )`, Sequence{-0.0}},
+		{`ceiling( -0.5e0 )`, Sequence{0.0}},
 		{`string(ceiling('xxx' ))`, Sequence{"NaN"}},
 		{`codepoints-to-string( reverse(  string-to-codepoints('Hellö')  ) ) `, Sequence{"ölleH"}},
 		{`codepoint-equal('ö','ö') `, Sequence{false}},
@@ -378,6 +380,7 @@ func TestEval(t *testing.T) {
 		{`for $i in /root/sub return $i[1]/@foo/string() `, Sequence{"baz", "bar", "bar"}},
 		{`for $i in /root/* return $i/local-name() `, Sequence{"sub", "sub", "sub", "other", "other", "a", "a"}},
 		{`some $i in /root/sub satisfies $i/@foo="bar" `, Sequence{true}},
+		{`some $i in /root/sub/@foo satisfies normalize-space($i) != '' `, Sequence{true}},
 		{`some $x in (1, 2, 3), $y in (2, 3) satisfies $x + $y = 4 `, Sequence{true}},
 		{`every $x in (1, 2, 3), $y in (2, 3) satisfies $x + $y = 4 `, Sequence{false}},
 		{`every $x in 1, $y in 2 satisfies $x + $y = 3 `, Sequence{true}},
@@ -423,6 +426,10 @@ func TestEval(t *testing.T) {
 		{`resolve-uri("bar", "http://example.com/foo/")`, Sequence{"http://example.com/foo/bar"}},
 		{`resolve-uri("../bar", "http://example.com/foo/baz")`, Sequence{"http://example.com/bar"}},
 		{`resolve-uri("http://example.com/abs", "http://other.com/")`, Sequence{"http://example.com/abs"}},
+		// Combined predicate with starts-with and string-length
+		{`count(/root/*[starts-with(local-name(), 'sub')])`, Sequence{3}},
+		{`count(/root/*[starts-with(local-name(), 'sub') and string-length(.) > 0])`, Sequence{3}},
+		{`count(/root/*[string-length(.) > 0 and starts-with(local-name(), 'sub')])`, Sequence{3}},
 	}
 
 	for _, td := range testdata {
@@ -453,6 +460,42 @@ func TestEval(t *testing.T) {
 			if itm != td.result[i] {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
+		}
+	}
+}
+
+func TestUnionChildAxis(t *testing.T) {
+	unionDoc := `<div><x>25</x><y>39</y><z>75</z></div>`
+	sr := strings.NewReader(unionDoc)
+	np, err := NewParser(sr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set context to the <div> element so that x, y, z are relative child steps.
+	div := np.Ctx.Document().Children()[0]
+	np.Ctx.SetContextSequence(Sequence{div})
+	np.Ctx.SetCurrentItem(div)
+
+	testdata := []struct {
+		input  string
+		result int // expected number of items
+	}{
+		{"x", 1},
+		{"y", 1},
+		{"x | y", 2},
+		{"x | y | z", 3},
+		{"x | z", 2},
+	}
+	for _, td := range testdata {
+		np.Ctx.SetContextSequence(Sequence{div})
+		seq, err := np.Evaluate(td.input)
+		if err != nil {
+			t.Errorf("%s: %v", td.input, err)
+			continue
+		}
+		if len(seq) != td.result {
+			t.Errorf("%s: got %d items, want %d", td.input, len(seq), td.result)
 		}
 	}
 }

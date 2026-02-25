@@ -22,6 +22,7 @@ type Context struct {
 	Pos          int                         // Used to determine the position() in the sequence
 	vars         map[string]Sequence
 	sequence     Sequence
+	currentItem  Item // XSLT current() item — stable across predicate evaluation
 	ctxPositions []int
 	ctxLengths   []int
 	size         int
@@ -63,11 +64,12 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 // changed without changing the original context.
 func CopyContext(cur *Context) *Context {
 	ctx := &Context{
-		xmldoc:     cur.xmldoc,
-		vars:       make(map[string]Sequence),
-		Namespaces: make(map[string]string),
-		Store:      make(map[interface{}]interface{}),
-		sequence:   cur.sequence,
+		xmldoc:      cur.xmldoc,
+		vars:        make(map[string]Sequence),
+		Namespaces:  make(map[string]string),
+		Store:       make(map[interface{}]interface{}),
+		sequence:    cur.sequence,
+		currentItem: cur.currentItem,
 	}
 
 	for k, v := range cur.vars {
@@ -100,6 +102,26 @@ func (ctx *Context) SetContextSequence(seq Sequence) Sequence {
 // GetContextSequence returns the current context.
 func (ctx *Context) GetContextSequence() Sequence {
 	return ctx.sequence
+}
+
+// SetCurrentItem sets the XSLT current() item.
+func (ctx *Context) SetCurrentItem(item Item) {
+	ctx.currentItem = item
+}
+
+// CurrentItem returns the XSLT current() item.
+func (ctx *Context) CurrentItem() Item {
+	return ctx.currentItem
+}
+
+// SetSize sets the context size used by last().
+func (ctx *Context) SetSize(n int) {
+	ctx.size = n
+}
+
+// Size returns the context size used by last().
+func (ctx *Context) Size() int {
+	return ctx.size
 }
 
 // Document moves the node navigator to the document and retuns it
@@ -343,6 +365,11 @@ func returnIsNameTFAttr(name string) testfuncAttributes {
 // An Item can hold anything such as a number, a string or a node.
 type Item interface{}
 
+// ItemStringvalue returns the string value of an individual item.
+func ItemStringvalue(itm Item) string {
+	return itemStringvalue(itm)
+}
+
 func itemStringvalue(itm Item) string {
 	var ret string
 	switch t := itm.(type) {
@@ -355,6 +382,8 @@ func itemStringvalue(itm Item) string {
 	case *goxml.Attribute:
 		ret = t.Value
 	case *goxml.Element:
+		ret = t.Stringvalue()
+	case *goxml.XMLDocument:
 		ret = t.Stringvalue()
 	case goxml.Comment:
 		ret = t.Contents
@@ -449,17 +478,17 @@ func isLessFloat(a, b float64) bool {
 
 func doCompareString(op string, a, b string) (bool, error) {
 	switch op {
-	case "<":
+	case "<", "lt":
 		return a < b, nil
-	case "=":
+	case "=", "eq":
 		return a == b, nil
-	case ">":
+	case ">", "gt":
 		return a > b, nil
-	case ">=":
+	case ">=", "ge":
 		return a >= b, nil
-	case "<=":
+	case "<=", "le":
 		return a <= b, nil
-	case "!=":
+	case "!=", "ne":
 		return a != b, nil
 	}
 	return false, fmt.Errorf("unknown operator %s", op)
@@ -467,17 +496,17 @@ func doCompareString(op string, a, b string) (bool, error) {
 
 func doCompareFloat(op string, a, b float64) (bool, error) {
 	switch op {
-	case "<":
+	case "<", "lt":
 		return a < b, nil
-	case "=":
+	case "=", "eq":
 		return a == b, nil
-	case ">":
+	case ">", "gt":
 		return a > b, nil
-	case ">=":
+	case ">=", "ge":
 		return a >= b, nil
-	case "<=":
+	case "<=", "le":
 		return a <= b, nil
-	case "!=":
+	case "!=", "ne":
 		return a != b, nil
 	}
 	return false, fmt.Errorf("unknown operator %s", op)
@@ -485,17 +514,17 @@ func doCompareFloat(op string, a, b float64) (bool, error) {
 
 func doCompareInt(op string, a, b int) (bool, error) {
 	switch op {
-	case "<":
+	case "<", "lt":
 		return a < b, nil
-	case "=":
+	case "=", "eq":
 		return a == b, nil
-	case ">":
+	case ">", "gt":
 		return a > b, nil
-	case ">=":
+	case ">=", "ge":
 		return a >= b, nil
-	case "<=":
+	case "<=", "le":
 		return a <= b, nil
-	case "!=":
+	case "!=", "ne":
 		return a != b, nil
 	}
 	return false, fmt.Errorf("unknown operator %s", op)
@@ -702,6 +731,13 @@ func NumberValue(s Sequence) (float64, error) {
 	}
 	if elt, ok := firstItem.(*goxml.Element); ok {
 		numberF, err := strconv.ParseFloat(elt.Stringvalue(), 64)
+		if err != nil {
+			return math.NaN(), nil
+		}
+		return numberF, nil
+	}
+	if doc, ok := firstItem.(*goxml.XMLDocument); ok {
+		numberF, err := strconv.ParseFloat(doc.Stringvalue(), 64)
 		if err != nil {
 			return math.NaN(), nil
 		}
@@ -1491,8 +1527,12 @@ func parseUnionExpr(tl *Tokenlist) (EvalFunc, error) {
 		if len(efs) == 1 {
 			return efs[0](ctx)
 		}
+		// Save and restore ctx.sequence so each union branch
+		// evaluates against the original context sequence.
+		savedSeq := ctx.sequence
 		var seq Sequence
 		for _, ef := range efs {
+			ctx.sequence = savedSeq
 			efSeq, err := ef(ctx)
 			if err != nil {
 				return nil, err
@@ -1734,6 +1774,61 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 		return nil, err
 	}
 
+	// Check for "cast as <type>"
+	if tl.nexttokIsValue("cast") {
+		tl.read() // consume "cast"
+		if !tl.nexttokIsValue("as") {
+			leaveStep(tl, "19 parseCastExpr")
+			return nil, fmt.Errorf("expected 'as' after 'cast'")
+		}
+		tl.read() // consume "as"
+		typTok, err := tl.read()
+		if err != nil {
+			leaveStep(tl, "19 parseCastExpr")
+			return nil, fmt.Errorf("expected type name after 'cast as'")
+		}
+		typName := typTok.Value.(string)
+		baseEf := ef
+		ef = func(ctx *Context) (Sequence, error) {
+			seq, err := baseEf(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(seq) == 0 {
+				return nil, fmt.Errorf("XPTY0004: empty sequence cannot be cast to %s", typName)
+			}
+			item := seq[0]
+			switch typName {
+			case "xs:integer", "xs:int":
+				n, err := NumberValue(Sequence{item})
+				if err != nil {
+					return nil, err
+				}
+				return Sequence{int(n)}, nil
+			case "xs:double", "xs:float", "xs:decimal":
+				n, err := NumberValue(Sequence{item})
+				if err != nil {
+					return nil, err
+				}
+				return Sequence{n}, nil
+			case "xs:string":
+				sv, err := StringValue(Sequence{item})
+				if err != nil {
+					return nil, err
+				}
+				return Sequence{sv}, nil
+			case "xs:boolean":
+				bv, err := BooleanValue(Sequence{item})
+				if err != nil {
+					return nil, err
+				}
+				return Sequence{bv}, nil
+			default:
+				return nil, fmt.Errorf("XPTY0004: unsupported cast type %s", typName)
+			}
+		}
+	}
+
 	leaveStep(tl, "19 parseCastExpr")
 	return ef, nil
 }
@@ -1833,6 +1928,30 @@ func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 			seq, err := rpe(ctx)
 			if err != nil {
 				return nil, err
+			}
+			// For "//" paths, sort result in document order and
+			// eliminate duplicates (XPath spec §3.3.2).
+			// Only sort when all items are XMLNodes with unique non-zero
+			// IDs (elements/documents from parsing have those;
+			// attributes created on the fly have ID=0).
+			if op == "//" && len(seq) > 1 {
+				var nodes goxml.SortByDocumentOrder
+				canSort := true
+				for _, itm := range seq {
+					n, ok := itm.(goxml.XMLNode)
+					if !ok || n.GetID() == 0 {
+						canSort = false
+						break
+					}
+					nodes = append(nodes, n)
+				}
+				if canSort {
+					nodes = nodes.SortAndEliminateDuplicates()
+					seq = make(Sequence, len(nodes))
+					for i, n := range nodes {
+						seq[i] = n
+					}
+				}
 			}
 			return seq, nil
 		}
@@ -2337,9 +2456,40 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
-	// VarRef
+	// VarRef — possibly followed by "(" for map/array/function-item lookup
 	if nexttok.Typ == tokVarname {
 		varname := nexttok.Value.(string)
+		if tl.nexttokIsTyp(tokOpenParen) {
+			// $var(key) — dynamic function call / map lookup
+			tl.read() // consume (
+			argEf, err := parseExprSingle(tl)
+			if err != nil {
+				return nil, err
+			}
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, fmt.Errorf("close paren expected after $%s(...)", varname)
+			}
+			ef = func(ctx *Context) (Sequence, error) {
+				varVal := ctx.vars[varname]
+				keySeq, err := argEf(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if len(varVal) == 1 {
+					if m, ok := varVal[0].(*XPathMap); ok {
+						var key Item
+						if len(keySeq) > 0 {
+							key = keySeq[0]
+						}
+						val, _ := m.Get(key)
+						return val, nil
+					}
+				}
+				return nil, fmt.Errorf("$%s is not a map (cannot use function-item call syntax)", varname)
+			}
+			leaveStep(tl, "41 parsePrimaryExpr (var-lookup)")
+			return ef, nil
+		}
 		ef = func(ctx *Context) (Sequence, error) {
 			return ctx.vars[varname], nil
 		}
