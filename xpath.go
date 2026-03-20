@@ -921,6 +921,7 @@ func parseForExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	ret := func(ctx *Context) (Sequence, error) {
 		var s Sequence
+		var err error
 
 		sequences := []Sequence{}
 		for _, ef := range efs {
@@ -1041,6 +1042,7 @@ func parseQuantifiedExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	evaler := func(ctx *Context) (Sequence, error) {
 		var s Sequence
+		var err error
 		sequences := []Sequence{}
 		for _, ef := range efs {
 			newcontext := CopyContext(ctx)
@@ -1978,7 +1980,6 @@ func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 	var ef EvalFunc
 	var efs []EvalFunc
 	var ops []string
-	var err error
 
 	for {
 		ef, err := parseStepExpr(tl)
@@ -2001,6 +2002,7 @@ func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 	ef = func(ctx *Context) (Sequence, error) {
 		var retseq Sequence
 		var seq Sequence
+		var err error
 		for i := 0; i < len(efs); i++ {
 			ef := efs[i]
 			retseq = retseq[:0]
@@ -2096,6 +2098,7 @@ func parseAxisStep(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 	ff := func(ctx *Context) (Sequence, error) {
+		var err error
 		_, err = ef(ctx)
 		if err != nil {
 			return nil, err
@@ -2227,6 +2230,7 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 	}
 	ret := func(ctx *Context) (Sequence, error) {
 		var ret Sequence
+		var err error
 		switch stepAxis {
 		case axisSelf:
 			// nothing
@@ -2409,6 +2413,7 @@ func parseFilterExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 	ff := func(ctx *Context) (Sequence, error) {
+		var err error
 		ctx.sequence, err = ef(ctx)
 		if err != nil {
 			return nil, err
