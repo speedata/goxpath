@@ -4,13 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/speedata/goxml"
 	"golang.org/x/net/html"
 )
+
+var exprCache sync.Map // cached parsed XPath expressions: string → EvalFunc
 
 // ErrSequence is raised when a sequence of items is not allowed as an argument.
 var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed here")
@@ -64,32 +69,37 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 // changed without changing the original context.
 func CopyContext(cur *Context) *Context {
 	ctx := &Context{
-		xmldoc:      cur.xmldoc,
-		vars:        make(map[string]Sequence),
-		Namespaces:  make(map[string]string),
-		Store:       make(map[interface{}]interface{}),
-		sequence:    cur.sequence,
-		currentItem: cur.currentItem,
-	}
-
-	for k, v := range cur.vars {
-		ctx.vars[k] = v
-	}
-
-	for k, v := range cur.Namespaces {
-		ctx.Namespaces[k] = v
-	}
-	for k, v := range cur.Store {
-		ctx.Store[k] = v
-	}
-	ctx.Pos = cur.Pos
-	for _, l := range cur.ctxLengths {
-		ctx.ctxLengths = append(ctx.ctxLengths, l)
-	}
-	for _, l := range cur.ctxPositions {
-		ctx.ctxPositions = append(ctx.ctxPositions, l)
+		xmldoc:       cur.xmldoc,
+		vars:         maps.Clone(cur.vars),
+		Namespaces:   maps.Clone(cur.Namespaces),
+		Store:        maps.Clone(cur.Store),
+		sequence:     cur.sequence,
+		currentItem:  cur.currentItem,
+		Pos:          cur.Pos,
+		ctxLengths:   slices.Clone(cur.ctxLengths),
+		ctxPositions: slices.Clone(cur.ctxPositions),
 	}
 	return ctx
+}
+
+// ResetFrom reuses an existing context by copying state from src.
+// Unlike CopyContext, it reuses the existing map allocations instead of creating
+// new maps, which reduces GC pressure in tight loops.
+func (ctx *Context) ResetFrom(src *Context) {
+	ctx.xmldoc = src.xmldoc
+	ctx.currentItem = src.currentItem
+	ctx.Pos = src.Pos
+	ctx.sequence = src.sequence
+	ctx.size = src.size
+
+	clear(ctx.vars)
+	maps.Copy(ctx.vars, src.vars)
+	clear(ctx.Namespaces)
+	maps.Copy(ctx.Namespaces, src.Namespaces)
+	clear(ctx.Store)
+	maps.Copy(ctx.Store, src.Store)
+	ctx.ctxLengths = append(ctx.ctxLengths[:0], src.ctxLengths...)
+	ctx.ctxPositions = append(ctx.ctxPositions[:0], src.ctxPositions...)
 }
 
 // SetContextSequence sets the context sequence and returns the previous one.
@@ -2957,7 +2967,12 @@ func (xp *Parser) SetVariable(name string, value Sequence) {
 }
 
 // Evaluate reads an XPath expression and evaluates it in the given context.
+// Parsed expressions are cached so that repeated evaluation of the same XPath
+// string avoids re-tokenizing and re-parsing.
 func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
+	if cached, ok := exprCache.Load(xpath); ok {
+		return cached.(EvalFunc)(xp.Ctx)
+	}
 	tl, err := stringToTokenlist(xpath)
 	if err != nil {
 		return nil, err
@@ -2966,7 +2981,7 @@ func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	exprCache.Store(xpath, evaler)
 	return evaler(xp.Ctx)
 }
 

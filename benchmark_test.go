@@ -175,3 +175,17 @@ func BenchmarkCopyContext(b *testing.B) {
 		CopyContext(np.Ctx)
 	}
 }
+
+// BenchmarkResetFrom measures context reuse via ResetFrom,
+// compared to CopyContext which always allocates new maps.
+func BenchmarkResetFrom(b *testing.B) {
+	np := newBenchParser(b, doc)
+	np.SetVariable("a", Sequence{1.0})
+	np.SetVariable("b", Sequence{"hello"})
+	np.Ctx.Store = map[interface{}]interface{}{"key": "value"}
+	reused := CopyContext(np.Ctx) // one initial allocation
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reused.ResetFrom(np.Ctx)
+	}
+}
