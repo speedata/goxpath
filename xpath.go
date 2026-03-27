@@ -254,6 +254,24 @@ func returnAttributeNameTest(name string) func(*Context, Item) bool {
 	}
 }
 
+// returnElementEQNameTest creates a test function for element(Q{namespace}localname).
+// The eqname format is "namespace}localname".
+func returnElementEQNameTest(eqname string) func(*Context, Item) bool {
+	idx := strings.Index(eqname, "}")
+	ns := eqname[:idx]
+	localName := eqname[idx+1:]
+	return func(ctx *Context, itm Item) bool {
+		if elt, ok := itm.(*goxml.Element); ok {
+			if elt.Name != localName {
+				return false
+			}
+			eltNS := elt.Namespaces[elt.Prefix]
+			return eltNS == ns
+		}
+		return false
+	}
+}
+
 func returnElementNameTest(name string) func(*Context, Item) bool {
 	// Pre-split the name once instead of on every call.
 	parts := strings.SplitN(name, ":", 2)
@@ -547,6 +565,7 @@ const (
 	xDouble
 	xInteger
 	xString
+	xBoolean
 )
 
 func compareFunc(op string, a, b interface{}) (bool, error) {
@@ -554,9 +573,16 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	var intLeft, intRight int
 	var int64Left, int64Right int64
 	var stringLeft, stringRight string
+	var boolLeft, boolRight bool
 	var dtLeft, dtRight datatype
 
 	var ok bool
+	if boolLeft, ok = a.(bool); ok {
+		dtLeft = xBoolean
+	}
+	if boolRight, ok = b.(bool); ok {
+		dtRight = xBoolean
+	}
 	if floatLeft, ok = a.(float64); ok {
 		dtLeft = xDouble
 	}
@@ -598,6 +624,30 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	if eltRight, ok := b.(*goxml.Element); ok {
 		dtRight = xString
 		stringRight = eltRight.Stringvalue()
+	}
+	if cdLeft, ok := a.(*goxml.CharData); ok {
+		dtLeft = xString
+		stringLeft = cdLeft.Contents
+	}
+	if cdRight, ok := b.(*goxml.CharData); ok {
+		dtRight = xString
+		stringRight = cdRight.Contents
+	}
+	if commentLeft, ok := a.(*goxml.Comment); ok {
+		dtLeft = xString
+		stringLeft = commentLeft.Contents
+	}
+	if commentRight, ok := b.(*goxml.Comment); ok {
+		dtRight = xString
+		stringRight = commentRight.Contents
+	}
+	if docLeft, ok := a.(*goxml.XMLDocument); ok {
+		dtLeft = xString
+		stringLeft = docLeft.Stringvalue()
+	}
+	if docRight, ok := b.(*goxml.XMLDocument); ok {
+		dtRight = xString
+		stringRight = docRight.Stringvalue()
 	}
 
 	if dtLeft == xDouble && dtRight == xDouble {
@@ -648,7 +698,64 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		return doCompareFloat(op, floatLeft, float64(intRight))
 	}
 
+	// Boolean comparisons: XPath general comparison promotes the non-boolean
+	// operand to boolean via BooleanValue, then compares as booleans.
+	if dtLeft == xBoolean || dtRight == xBoolean {
+		if dtLeft != xBoolean {
+			boolLeft = toBoolForCompare(a, dtLeft, floatLeft, intLeft, stringLeft)
+		}
+		if dtRight != xBoolean {
+			boolRight = toBoolForCompare(b, dtRight, floatRight, intRight, stringRight)
+		}
+		return doCompareBool(op, boolLeft, boolRight)
+	}
+
 	return false, fmt.Errorf("FORG0001")
+}
+
+// toBoolForCompare converts a non-boolean operand to bool for general comparison.
+// XPath spec: number != 0 is true, non-empty string is true.
+func toBoolForCompare(v interface{}, dt datatype, floatVal float64, intVal int, stringVal string) bool {
+	switch dt {
+	case xDouble:
+		return floatVal != 0 && !math.IsNaN(floatVal)
+	case xInteger:
+		return intVal != 0
+	case xString:
+		return stringVal != ""
+	default:
+		// For node types or unknown, attempt string conversion
+		if s, ok := v.(interface{ Stringvalue() string }); ok {
+			return s.Stringvalue() != ""
+		}
+		return false
+	}
+}
+
+func doCompareBool(op string, a, b bool) (bool, error) {
+	// For ordered comparisons, true > false (true=1, false=0)
+	ai, bi := 0, 0
+	if a {
+		ai = 1
+	}
+	if b {
+		bi = 1
+	}
+	switch op {
+	case "=", "eq":
+		return a == b, nil
+	case "!=", "ne":
+		return a != b, nil
+	case "<", "lt":
+		return ai < bi, nil
+	case "<=", "le":
+		return ai <= bi, nil
+	case ">", "gt":
+		return ai > bi, nil
+	case ">=", "ge":
+		return ai >= bi, nil
+	}
+	return false, fmt.Errorf("unknown op %s", op)
 }
 
 func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
@@ -2739,6 +2846,36 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 	}
 	switch name {
 	case "element":
+		nexttok, err := tl.peek()
+		if err != nil {
+			return nil, err
+		}
+		if nexttok.Value == ')' {
+			tl.read()
+			leaveStep(tl, "35 parseNodeTest")
+			return isElement, nil
+		} else if nexttok.Value == "*" && nexttok.Typ == tokOperator {
+			tl.read()
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return isElement, nil
+		} else if nexttok.Typ == tokEQName {
+			tl.read()
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return returnElementEQNameTest(nexttok.String()), nil
+		} else if nexttok.Typ == tokQName {
+			tl.read()
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return returnElementNameTest(nexttok.String()), nil
+		}
 		if err = tl.skipType(tokCloseParen); err != nil {
 			return nil, err
 		}

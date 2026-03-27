@@ -2068,6 +2068,8 @@ func init() {
 	RegisterFunction(&Function{Name: "hours-from-duration", Namespace: nsFN, F: fnHoursFromDuration, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "hours-from-time", Namespace: nsFN, F: fnHoursFromTime, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "index-of", Namespace: nsFN, F: fnIndexOf, MinArg: 2, MaxArg: 3})
+	RegisterFunction(&Function{Name: "json-to-xml", Namespace: nsFN, F: fnJSONToXML, MinArg: 1, MaxArg: 2})
+	RegisterFunction(&Function{Name: "xml-to-json", Namespace: nsFN, F: fnXMLToJSON, MinArg: 1, MaxArg: 2})
 	RegisterFunction(&Function{Name: "in-scope-prefixes", Namespace: nsFN, F: fnInScopePrefixes, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "insert-before", Namespace: nsFN, F: fnInsertBefore, MinArg: 3, MaxArg: 3})
 	RegisterFunction(&Function{Name: "iri-to-uri", Namespace: nsFN, F: fnIRIToURI, MinArg: 1, MaxArg: 1})

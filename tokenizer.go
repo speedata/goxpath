@@ -41,6 +41,8 @@ const (
 	tokOpenBrace
 	// tokCloseBrace is a closing curly brace }.
 	tokCloseBrace
+	// tokEQName is a URIQualifiedName: Q{namespace}localname.
+	tokEQName
 )
 
 func (tt tokenType) String() string {
@@ -71,6 +73,8 @@ func (tt tokenType) String() string {
 		return "open brace"
 	case tokCloseBrace:
 		return "close brace"
+	case tokEQName:
+		return "EQName"
 	}
 	return "--"
 }
@@ -295,7 +299,7 @@ func getQName(sr *strings.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '·' || r == '‿' || r == '⁀' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' || r == '·' || r == '‿' || r == '⁀' {
 			word = append(word, r)
 		} else if r == ':' {
 			if hasColon {
@@ -310,6 +314,31 @@ func getQName(sr *strings.Reader) (string, error) {
 		}
 	}
 	return string(word), nil
+}
+
+// getEQName reads the rest of an EQName after "Q{" has been consumed.
+// It reads the namespace URI up to "}", then the local name.
+// Returns "namespace}localname" as the token value.
+func getEQName(sr *strings.Reader) (string, error) {
+	var ns []rune
+	for {
+		r, _, err := sr.ReadRune()
+		if err != nil {
+			return "", fmt.Errorf("unterminated Q{} EQName")
+		}
+		if r == '}' {
+			break
+		}
+		ns = append(ns, r)
+	}
+	localName, err := getQName(sr)
+	if err != nil {
+		return "", err
+	}
+	if localName == "" {
+		return "", fmt.Errorf("missing local name in Q{%s}", string(ns))
+	}
+	return string(ns) + "}" + localName, nil
 }
 
 func getDelimitedString(sr *strings.Reader) (string, error) {
@@ -483,6 +512,21 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 			word, err := getQName(sr)
 			if err != nil {
 				return nil, err
+			}
+			// Check for EQName: Q{namespace}localname
+			if word == "Q" {
+				nextRune, _, err := sr.ReadRune()
+				if err == nil && nextRune == '{' {
+					eqname, err := getEQName(sr)
+					if err != nil {
+						return nil, err
+					}
+					tokens = append(tokens, token{eqname, tokEQName})
+					continue
+				}
+				if err == nil {
+					sr.UnreadRune()
+				}
 			}
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {

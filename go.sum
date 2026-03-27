@@ -1,5 +1,5 @@
-github.com/speedata/goxml v1.0.7 h1:4X6VQoHGlg34YHku2tSb2OpcuJ2hCYBls4boTCTZXuQ=
-github.com/speedata/goxml v1.0.7/go.mod h1:G++cv0h2rC8ltAhvQmANDgwMbKRd3MetXlF8PLob6dw=
+github.com/speedata/goxml v1.0.8 h1:aY8yCr2epUmXe50FYGPYwrbNj3jwh1yfjuM04jGk18s=
+github.com/speedata/goxml v1.0.8/go.mod h1:G++cv0h2rC8ltAhvQmANDgwMbKRd3MetXlF8PLob6dw=
 golang.org/x/net v0.48.0 h1:zyQRTTrjc33Lhh0fBgT/H3oZq9WuvRR5gPC70xpDiQU=
 golang.org/x/net v0.48.0/go.mod h1:+ndRgGjkh8FGtu1w1FGbEC31if4VrNVMuKTgcAAnQRY=
 golang.org/x/text v0.32.0 h1:ZD01bjUt1FQ9WJ0ClOL5vxgxOI/sVCNgX1YtKwcY0mU=
