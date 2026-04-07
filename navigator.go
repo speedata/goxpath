@@ -35,6 +35,12 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
 			}
+		case goxml.Comment:
+			// Comment nodes have no children.
+		case goxml.ProcInst:
+			// PI nodes have no children.
+		case goxml.NamespaceNode:
+			// Namespace nodes have no children.
 		case Sequence:
 			for _, itm := range t {
 				if tf(ctx, itm) {
@@ -62,46 +68,44 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 				seq = append(seq, t)
 			}
 			for _, cld := range t.Children() {
-				if elt, ok := cld.(*goxml.Element); ok {
-					copysequence := ctx.sequence
-					ctx.sequence = Sequence{elt}
-					s, err := ctx.descendantOrSelfAxis(tf)
-					if err != nil {
-						return nil, err
-					}
-					for _, itm := range s {
-						seq = append(seq, itm)
-					}
-					ctx.sequence = copysequence
+				copysequence := ctx.sequence
+				ctx.sequence = Sequence{cld}
+				s, err := ctx.descendantOrSelfAxis(tf)
+				if err != nil {
+					return nil, err
 				}
+				seq = append(seq, s...)
+				ctx.sequence = copysequence
 			}
 		case *goxml.Element:
 			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
 			for _, cld := range t.Children() {
-				if elt, ok := cld.(*goxml.Element); ok {
-					copysequence := ctx.sequence
-					ctx.sequence = Sequence{elt}
-					s, err := ctx.descendantOrSelfAxis(tf)
-					if err != nil {
-						return nil, err
-					}
-					for _, itm := range s {
-						seq = append(seq, itm)
-					}
-					ctx.sequence = copysequence
-				} else if txt, ok := cld.(goxml.CharData); ok {
-					if tf(ctx, txt) {
-						seq = append(seq, txt.Contents)
-					}
-
+				copysequence := ctx.sequence
+				ctx.sequence = Sequence{cld}
+				s, err := ctx.descendantOrSelfAxis(tf)
+				if err != nil {
+					return nil, err
 				}
-
+				seq = append(seq, s...)
+				ctx.sequence = copysequence
 			}
 		case goxml.CharData:
 			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
+			}
+		case goxml.Comment:
+			if tf(ctx, t) {
+				seq = append(seq, t)
+			}
+		case goxml.ProcInst:
+			if tf(ctx, t) {
+				seq = append(seq, t)
+			}
+		case goxml.NamespaceNode:
+			if tf(ctx, t) {
+				seq = append(seq, t)
 			}
 		case Sequence:
 			for _, itm := range t {
@@ -156,6 +160,18 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 		case goxml.CharData:
 			if tf(ctx, t) {
 				seq = append(seq, t.Contents)
+			}
+		case goxml.Comment:
+			if tf(ctx, t) {
+				seq = append(seq, t)
+			}
+		case goxml.ProcInst:
+			if tf(ctx, t) {
+				seq = append(seq, t)
+			}
+		case goxml.NamespaceNode:
+			if tf(ctx, t) {
+				seq = append(seq, t)
 			}
 		case Sequence:
 			for _, itm := range t {

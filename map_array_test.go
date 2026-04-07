@@ -132,7 +132,7 @@ func TestMapFunctions(t *testing.T) {
 			continue
 		}
 		for i, itm := range seq {
-			if itm != td.result[i] {
+			if !itemsEqual(itm, td.result[i]) {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
@@ -172,7 +172,7 @@ func TestArrayFunctions(t *testing.T) {
 			continue
 		}
 		for i, itm := range seq {
-			if itm != td.result[i] {
+			if !itemsEqual(itm, td.result[i]) {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}

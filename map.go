@@ -160,4 +160,86 @@ func init() {
 	RegisterFunction(&Function{Name: "size", Namespace: nsMap, F: fnMapSize, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "put", Namespace: nsMap, F: fnMapPut, MinArg: 3, MaxArg: 3})
 	RegisterFunction(&Function{Name: "merge", Namespace: nsMap, F: fnMapMerge, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "entry", Namespace: nsMap, F: func(ctx *Context, args []Sequence) (Sequence, error) {
+		if len(args[0]) != 1 {
+			return nil, fmt.Errorf("map:entry: key must be a single item")
+		}
+		return Sequence{&XPathMap{Entries: []MapEntry{{Key: args[0][0], Value: args[1]}}}}, nil
+	}, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "remove", Namespace: nsMap, F: func(ctx *Context, args []Sequence) (Sequence, error) {
+		if len(args[0]) != 1 {
+			return nil, fmt.Errorf("map:remove: first argument must be a single map")
+		}
+		m, ok := args[0][0].(*XPathMap)
+		if !ok {
+			return nil, fmt.Errorf("map:remove: first argument must be a map")
+		}
+		// Collect keys to remove
+		removeKeys := make(map[string]bool)
+		for _, key := range args[1] {
+			removeKeys[itemStringvalue(key)] = true
+		}
+		var newEntries []MapEntry
+		for _, entry := range m.Entries {
+			if !removeKeys[itemStringvalue(entry.Key)] {
+				newEntries = append(newEntries, entry)
+			}
+		}
+		return Sequence{&XPathMap{Entries: newEntries}}, nil
+	}, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "find", Namespace: nsMap, F: func(ctx *Context, args []Sequence) (Sequence, error) {
+		if len(args[1]) != 1 {
+			return nil, fmt.Errorf("map:find: key must be a single item")
+		}
+		key := args[1][0]
+		var results []Sequence
+		var findInItem func(item Item)
+		findInItem = func(item Item) {
+			if m, ok := item.(*XPathMap); ok {
+				if val, found := m.Get(key); found {
+					results = append(results, val)
+				}
+				for _, entry := range m.Entries {
+					for _, v := range entry.Value {
+						findInItem(v)
+					}
+				}
+			} else if arr, ok := item.(*XPathArray); ok {
+				for _, member := range arr.Members {
+					for _, v := range member {
+						findInItem(v)
+					}
+				}
+			}
+		}
+		for _, item := range args[0] {
+			findInItem(item)
+		}
+		return Sequence{&XPathArray{Members: results}}, nil
+	}, MinArg: 2, MaxArg: 2})
+	RegisterFunction(&Function{Name: "for-each", Namespace: nsMap, F: func(ctx *Context, args []Sequence) (Sequence, error) {
+		if len(args[0]) != 1 {
+			return nil, fmt.Errorf("map:for-each: first argument must be a single map")
+		}
+		m, ok := args[0][0].(*XPathMap)
+		if !ok {
+			return nil, fmt.Errorf("map:for-each: first argument must be a map")
+		}
+		if len(args[1]) != 1 {
+			return nil, fmt.Errorf("map:for-each: second argument must be a single function")
+		}
+		fn, ok := args[1][0].(*XPathFunction)
+		if !ok {
+			return nil, fmt.Errorf("map:for-each: second argument must be a function")
+		}
+		var result Sequence
+		for _, entry := range m.Entries {
+			res, err := fn.Call(ctx, []Sequence{{entry.Key}, entry.Value})
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, res...)
+		}
+		return result, nil
+	}, MinArg: 2, MaxArg: 2})
 }

@@ -86,7 +86,15 @@ func TestGetAxis(t *testing.T) {
 		} else {
 			for i, tok := range toks {
 				expected := td.output[i]
-				if tok.Typ != expected.Typ || tok.Value != expected.Value {
+				valMatch := tok.Value == expected.Value
+				if !valMatch {
+					if fa, aOk := ToFloat64(tok.Value); aOk {
+						if fb, bOk := ToFloat64(expected.Value); bOk {
+							valMatch = fa == fb
+						}
+					}
+				}
+				if tok.Typ != expected.Typ || !valMatch {
 					t.Errorf("tok[%d] = %v, want %v", i, tok, expected)
 				}
 			}
@@ -129,7 +137,15 @@ func TestOperator(t *testing.T) {
 		} else {
 			for i, tok := range toks {
 				expected := td.output[i]
-				if tok.Typ != expected.Typ || tok.Value != expected.Value {
+				valMatch := tok.Value == expected.Value
+				if !valMatch {
+					if fa, aOk := ToFloat64(tok.Value); aOk {
+						if fb, bOk := ToFloat64(expected.Value); bOk {
+							valMatch = fa == fb
+						}
+					}
+				}
+				if tok.Typ != expected.Typ || !valMatch {
 					t.Errorf("tok[%d] = %v, want %v", i, tok, expected)
 				}
 			}

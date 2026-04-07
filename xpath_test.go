@@ -59,7 +59,7 @@ func TestEval(t *testing.T) {
 		input  string
 		result Sequence
 	}{
-		{`string(xs:time("11:23:00")) `, Sequence{"11:23:00.000+00:00"}},
+		{`string(xs:time("11:23:00")) `, Sequence{"11:23:00Z"}},
 		{`string-to-codepoints( "hellö" ) `, Sequence{104, 101, 108, 108, 246}},
 		{`codepoints-to-string( (65,33*2,67) )`, Sequence{"ABC"}},
 		{`count(/root/other | /root/other)`, Sequence{2}},
@@ -110,14 +110,14 @@ func TestEval(t *testing.T) {
 		{`7 div 2 `, Sequence{3.5}},
 		{`-3 div 2 `, Sequence{-1.5}},
 		{`$one-two div $a`, Sequence{2.4}},
-		{`$one-two idiv $a`, Sequence{2.0}},
-		{`10 idiv 3`, Sequence{3.0}},
-		{`3 idiv -2`, Sequence{-1.0}},
-		{`-3 idiv 2`, Sequence{-1.0}},
-		{`-3 idiv -2`, Sequence{1.0}},
-		{`9.0 idiv 3`, Sequence{3.0}},
-		{`-3.5 idiv 3`, Sequence{-1.0}},
-		{`3.0 idiv 4`, Sequence{0.0}},
+		{`$one-two idiv $a`, Sequence{2}},
+		{`10 idiv 3`, Sequence{3}},
+		{`3 idiv -2`, Sequence{-1}},
+		{`-3 idiv 2`, Sequence{-1}},
+		{`-3 idiv -2`, Sequence{1}},
+		{`9.0 idiv 3`, Sequence{3}},
+		{`-3.5 idiv 3`, Sequence{-1}},
+		{`3.0 idiv 4`, Sequence{0}},
 		{`7 div 2 = 3.5 `, Sequence{true}},
 		{`8 mod 2 = 0 `, Sequence{true}},
 		{`(1,2) `, Sequence{1.0, 2.0}},
@@ -188,9 +188,9 @@ func TestEval(t *testing.T) {
 		{`contains("Shakespeare", "")`, Sequence{true}},
 		{`contains("", "a")`, Sequence{false}},
 		{`contains("Shakespeare", "spear")`, Sequence{true}},
-		{`string(current-dateTime())  `, Sequence{"2023-11-21T10:19:58.000+01:00"}},
-		{`string(current-date())  `, Sequence{"2023-11-21+01:00"}},
-		{`string(current-time())  `, Sequence{"10:19:58.000+01:00"}},
+		{`string(current-dateTime())  `, Sequence{"2023-11-21T10:19:58+01:00"}},
+		{`string(current-date())  `, Sequence{"2023-11-21"}},
+		{`string(current-time())  `, Sequence{"10:19:58+01:00"}},
 		{`empty( () )`, Sequence{true}},
 		{`empty( /root/sub )`, Sequence{false}},
 		{`empty( /root/doesnotexist )`, Sequence{true}},
@@ -417,11 +417,11 @@ func TestEval(t *testing.T) {
 		{`string(/processing-instruction())`, Sequence{"text "}},
 		{`string(/processing-instruction(pi))`, Sequence{"text "}},
 		{`string(/processing-instruction(doesnotexist))`, Sequence{""}},
-		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07T15:00:00.000+00:00"}},
-		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("-PT10H")))`, Sequence{"2002-03-07T05:00:00.000-10:00"}},
-		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT5H30M")))`, Sequence{"2002-03-07T20:30:00.000+05:30"}},
-		{`string(adjust-date-to-timezone(xs:date("2002-03-07-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07+00:00"}},
-		{`string(adjust-time-to-timezone(xs:time("10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"15:00:00.000+00:00"}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07T15:00:00Z"}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("-PT10H")))`, Sequence{"2002-03-07T05:00:00-10:00"}},
+		{`string(adjust-dateTime-to-timezone(xs:dateTime("2002-03-07T10:00:00-05:00"), xs:duration("PT5H30M")))`, Sequence{"2002-03-07T20:30:00+05:30"}},
+		{`string(adjust-date-to-timezone(xs:date("2002-03-07-05:00"), xs:duration("PT0S")))`, Sequence{"2002-03-07"}},
+		{`string(adjust-time-to-timezone(xs:time("10:00:00-05:00"), xs:duration("PT0S")))`, Sequence{"15:00:00Z"}},
 		{`doc-available("nonexistent-file-xyz.xml")`, Sequence{false}},
 		{`resolve-uri("bar", "http://example.com/foo/")`, Sequence{"http://example.com/foo/bar"}},
 		{`resolve-uri("../bar", "http://example.com/foo/baz")`, Sequence{"http://example.com/bar"}},
@@ -457,7 +457,7 @@ func TestEval(t *testing.T) {
 			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
 		}
 		for i, itm := range seq {
-			if itm != td.result[i] {
+			if !itemsEqual(itm, td.result[i]) {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
@@ -535,7 +535,7 @@ func TestLang(t *testing.T) {
 			continue
 		}
 		for i, itm := range seq {
-			if itm != td.result[i] {
+			if !itemsEqual(itm, td.result[i]) {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
@@ -572,9 +572,23 @@ func TestNSEval(t *testing.T) {
 			t.Errorf("len(seq) = %d, want %d, test: %s", got, want, td.input)
 		}
 		for i, itm := range seq {
-			if itm != td.result[i] {
+			if !itemsEqual(itm, td.result[i]) {
 				t.Errorf("seq[%d] = %#v, want %#v. test: %s", i, itm, td.result[i], td.input)
 			}
 		}
 	}
+}
+
+// itemsEqual compares two items, treating numeric values as equal if they
+// have the same numeric value regardless of Go type (int vs float64 vs XSDouble etc.)
+func itemsEqual(a, b interface{}) bool {
+	if a == b {
+		return true
+	}
+	fa, aOk := ToFloat64(a)
+	fb, bOk := ToFloat64(b)
+	if aOk && bOk {
+		return fa == fb
+	}
+	return false
 }

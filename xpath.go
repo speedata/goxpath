@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/speedata/goxml"
 	"golang.org/x/net/html"
@@ -31,7 +32,9 @@ type Context struct {
 	ctxPositions []int
 	ctxLengths   []int
 	size         int
-	xmldoc       *goxml.XMLDocument
+	xmldoc         *goxml.XMLDocument
+	decimalFormats map[string]*DecimalFormat
+	currentTime    *time.Time // cached per-evaluation, set on first access
 }
 
 type rName struct {
@@ -39,16 +42,15 @@ type rName struct {
 	localName string
 }
 
-func rNameFromString(namespaces map[string]string, name string) rName {
-	testName := rName{}
-	parts := strings.Split(name, ":")
-	if len(parts) == 1 {
-		testName.localName = parts[0]
-	} else if len(parts) == 2 {
-		testName.localName = parts[1]
-		testName.uri = namespaces[parts[0]]
+// CurrentTime returns the stable current time for this evaluation.
+// Per XPath spec, current-dateTime() returns the same value within a single evaluation.
+// The time is cached on first access and reused for all subsequent calls.
+func (ctx *Context) CurrentTime() time.Time {
+	if ctx.currentTime == nil {
+		t := currentTimeGetter()
+		ctx.currentTime = &t
 	}
-	return testName
+	return *ctx.currentTime
 }
 
 // NewContext returns a context from the xml document
@@ -60,6 +62,7 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	}
 	ctx.Namespaces["fn"] = nsFN
 	ctx.Namespaces["xs"] = nsXS
+	ctx.Namespaces["math"] = nsMath
 	ctx.Namespaces["map"] = nsMap
 	ctx.Namespaces["array"] = nsArray
 	return ctx
@@ -335,11 +338,8 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 		if i == 0 && len(predicate) == 1 {
 			var predicateNum int
 			var isNum bool
-			if p0, ok := predicate[0].(float64); ok {
+			if p0, ok := ToFloat64(predicate[0]); ok {
 				predicateNum = int(p0)
-				isNum = true
-			} else if p0, ok := predicate[0].(int); ok {
-				predicateNum = p0
 				isNum = true
 			}
 			if isNum {
@@ -370,26 +370,6 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 	return result, nil
 }
 
-func returnIsNameTF(name string) testfuncChildren {
-	tf := func(elt *goxml.Element) bool {
-		if name == "*" || elt.Name == name {
-			return true
-		}
-		return false
-	}
-	return tf
-}
-
-func returnIsNameTFAttr(name string) testfuncAttributes {
-	tf := func(elt *goxml.Attribute) bool {
-		if name == "*" || elt.Name == name {
-			return true
-		}
-		return false
-	}
-	return tf
-}
-
 // An Item can hold anything such as a number, a string or a node.
 type Item interface{}
 
@@ -398,13 +378,74 @@ func ItemStringvalue(itm Item) string {
 	return itemStringvalue(itm)
 }
 
+// formatXSDoubleString formats a float64 as xs:double/xs:float canonical string.
+// Handles INF, -INF, NaN, -0, and uses scientific notation for large/small values.
+func formatXSDoubleString(t float64) string {
+	if math.IsInf(t, 1) {
+		return "INF"
+	} else if math.IsInf(t, -1) {
+		return "-INF"
+	} else if math.IsNaN(t) {
+		return "NaN"
+	} else if t == 0 {
+		if math.Signbit(t) {
+			return "-0"
+		}
+		return "0"
+	}
+	abs := math.Abs(t)
+	if abs >= 1e6 || (abs < 1e-6 && abs != 0) {
+		return formatXPathDouble(t)
+	}
+	return strconv.FormatFloat(t, 'f', -1, 64)
+}
+
+// formatXPathDouble formats a float64 in XPath canonical scientific notation
+// (no '+' in exponent, no zero-padded exponent: "1.5E2" not "1.5E+02").
+func formatXPathDouble(f float64) string {
+	s := strconv.FormatFloat(f, 'E', -1, 64)
+	s = strings.Replace(s, "E+", "E", 1)
+	// Remove leading zeros in exponent: E09 → E9, E-03 → E-3
+	if idx := strings.IndexByte(s, 'E'); idx >= 0 {
+		mantissa := s[:idx]
+		exp := s[idx+1:]
+		sign := ""
+		if len(exp) > 0 && exp[0] == '-' {
+			sign = "-"
+			exp = exp[1:]
+		}
+		exp = strings.TrimLeft(exp, "0")
+		if exp == "" {
+			exp = "0"
+		}
+		// Ensure mantissa has decimal point: -1E7 → -1.0E7
+		if !strings.Contains(mantissa, ".") {
+			mantissa += ".0"
+		}
+		s = mantissa + "E" + sign + exp
+	}
+	return s
+}
+
 func itemStringvalue(itm Item) string {
 	var ret string
 	switch t := itm.(type) {
+	case XSDouble:
+		ret = formatXSDoubleString(float64(t))
+	case XSFloat:
+		ret = formatXSDoubleString(float64(t))
+	case XSDecimal:
+		// xs:decimal always uses fixed-point notation, never scientific
+		ret = strconv.FormatFloat(float64(t), 'f', -1, 64)
 	case float64:
-		ret = strconv.FormatFloat(t, 'f', -1, 64)
+		// Bare float64 — legacy path, format as double
+		ret = formatXSDoubleString(t)
 	case int:
 		ret = strconv.Itoa(t)
+	case XSInteger:
+		ret = strconv.Itoa(t.V)
+	case XSString:
+		ret = t.V
 	case []uint8:
 		ret = string(t)
 	case *goxml.Attribute:
@@ -429,12 +470,39 @@ func itemStringvalue(itm Item) string {
 		ret = str.String()
 	case string:
 		ret = t
+	case XSDateTime:
+		ret = formatXSDateTime(time.Time(t))
+	case XSDate:
+		ret = formatXSDate(time.Time(t))
+	case XSTime:
+		ret = formatXSTime(time.Time(t))
+	case XSDuration:
+		ret = t.String()
+	case XSGYear:
+		ret = string(t)
+	case XSGMonth:
+		ret = string(t)
+	case XSGDay:
+		ret = string(t)
+	case XSGYearMonth:
+		ret = string(t)
+	case XSGMonthDay:
+		ret = string(t)
+	case XSAnyURI:
+		ret = string(t)
+	case XSUntypedAtomic:
+		ret = string(t)
+	case XSHexBinary:
+		ret = string(t)
+	case XSBase64Binary:
+		ret = string(t)
+	case XSQName:
+		ret = t.String()
 	case *html.Node:
 		var buf strings.Builder
 		html.Render(&buf, t)
 		ret = buf.String()
 	default:
-		// fmt.Printf("~~> t %T\n", t)
 		ret = fmt.Sprint(t)
 	}
 	return ret
@@ -496,14 +564,6 @@ func (s Sequence) IntValue() (int, error) {
 // context.
 type EvalFunc func(*Context) (Sequence, error)
 
-func isEqual(a, b interface{}) (bool, error) {
-	return a == b, nil
-}
-
-func isLessFloat(a, b float64) bool {
-	return a < b
-}
-
 func doCompareString(op string, a, b string) (bool, error) {
 	switch op {
 	case "<", "lt":
@@ -520,6 +580,257 @@ func doCompareString(op string, a, b string) (bool, error) {
 		return a != b, nil
 	}
 	return false, fmt.Errorf("unknown operator %s", op)
+}
+
+// formatXSDateTime formats a time.Time as xs:dateTime canonical form.
+func formatXSDateTime(t time.Time) string {
+	// Check if timezone was set (zero value of Location is UTC for parsed values)
+	_, offset := t.Zone()
+	base := t.Format("2006-01-02T15:04:05")
+	// Add fractional seconds only if non-zero
+	if ns := t.Nanosecond(); ns > 0 {
+		frac := strings.TrimRight(fmt.Sprintf(".%09d", ns), "0")
+		base += frac
+	}
+	if offset == 0 && t.Location() == time.UTC {
+		return base + "Z"
+	}
+	return base + formatTimezone(offset)
+}
+
+// formatXSDate formats a time.Time as xs:date canonical form.
+func formatXSDate(t time.Time) string {
+	_, offset := t.Zone()
+	base := t.Format("2006-01-02")
+	if t.Location() == time.UTC {
+		// Only add timezone if it was explicitly set
+		name, _ := t.Zone()
+		if name == "UTC" && offset == 0 {
+			// Check if timezone was part of the original parse
+			// For dates parsed without timezone, don't add one
+		}
+	}
+	return base
+}
+
+// formatXSTime formats a time.Time as xs:time canonical form.
+func formatXSTime(t time.Time) string {
+	_, offset := t.Zone()
+	base := t.Format("15:04:05")
+	if ns := t.Nanosecond(); ns > 0 {
+		frac := strings.TrimRight(fmt.Sprintf(".%09d", ns), "0")
+		base += frac
+	}
+	if offset == 0 && t.Location() == time.UTC {
+		return base + "Z"
+	}
+	if t.Location() != time.UTC {
+		return base + formatTimezone(offset)
+	}
+	return base
+}
+
+func formatTimezone(offsetSec int) string {
+	if offsetSec == 0 {
+		return "Z"
+	}
+	sign := "+"
+	if offsetSec < 0 {
+		sign = "-"
+		offsetSec = -offsetSec
+	}
+	hours := offsetSec / 3600
+	minutes := (offsetSec % 3600) / 60
+	return fmt.Sprintf("%s%02d:%02d", sign, hours, minutes)
+}
+
+// addItems performs addition or subtraction of two items, handling numeric, duration, and date/time types.
+func addItems(a, b Item, op string) (Item, error) {
+	// Duration + Duration
+	if da, ok := a.(XSDuration); ok {
+		if db, ok := b.(XSDuration); ok {
+			return addDurations(da, db, op), nil
+		}
+	}
+	// DateTime/Date/Time + Duration
+	if dt, ok := a.(XSDateTime); ok {
+		if dur, ok := b.(XSDuration); ok {
+			return XSDateTime(addTimeDuration(time.Time(dt), dur, op)), nil
+		}
+		// DateTime - DateTime = Duration
+		if dt2, ok := b.(XSDateTime); ok {
+			if op == "-" {
+				return subtractTimes(time.Time(dt), time.Time(dt2)), nil
+			}
+		}
+	}
+	if dt, ok := a.(XSDate); ok {
+		if dur, ok := b.(XSDuration); ok {
+			return XSDate(addTimeDuration(time.Time(dt), dur, op)), nil
+		}
+		if dt2, ok := b.(XSDate); ok {
+			if op == "-" {
+				return subtractTimes(time.Time(dt), time.Time(dt2)), nil
+			}
+		}
+	}
+	if dt, ok := a.(XSTime); ok {
+		if dur, ok := b.(XSDuration); ok {
+			return XSTime(addTimeDuration(time.Time(dt), dur, op)), nil
+		}
+		if dt2, ok := b.(XSTime); ok {
+			if op == "-" {
+				return subtractTimes(time.Time(dt), time.Time(dt2)), nil
+			}
+		}
+	}
+
+	// Fall back to numeric with type promotion
+	na, err := NumberValue(Sequence{a})
+	if err != nil {
+		return nil, err
+	}
+	nb, err := NumberValue(Sequence{b})
+	if err != nil {
+		return nil, err
+	}
+	resultType := PromoteNumeric(NumericType(a), NumericType(b))
+	var result float64
+	if op == "+" {
+		result = na + nb
+	} else {
+		result = na - nb
+	}
+	return WrapNumeric(result, resultType), nil
+}
+
+// addDurations adds or subtracts two durations.
+func addDurations(a, b XSDuration, op string) XSDuration {
+	sa := durationToMonthsAndSeconds(a)
+	sb := durationToMonthsAndSeconds(b)
+	if op == "-" {
+		sb.months = -sb.months
+		sb.seconds = -sb.seconds
+	}
+	totalMonths := sa.months + sb.months
+	totalSeconds := sa.seconds + sb.seconds
+	return monthsAndSecondsToDuration(totalMonths, totalSeconds)
+}
+
+type monthsSeconds struct {
+	months  int
+	seconds float64
+}
+
+func durationToMonthsAndSeconds(d XSDuration) monthsSeconds {
+	months := d.Years*12 + d.Months
+	seconds := float64(d.Days)*86400 + float64(d.Hours)*3600 + float64(d.Minutes)*60 + d.Seconds
+	if d.Negative {
+		months = -months
+		seconds = -seconds
+	}
+	return monthsSeconds{months, seconds}
+}
+
+func monthsAndSecondsToDuration(months int, seconds float64) XSDuration {
+	var d XSDuration
+	if months < 0 || (months == 0 && seconds < 0) {
+		d.Negative = true
+		months = -months
+		seconds = -seconds
+	}
+	d.Years = months / 12
+	d.Months = months % 12
+	totalSecs := int(seconds)
+	d.Days = totalSecs / 86400
+	totalSecs %= 86400
+	d.Hours = totalSecs / 3600
+	totalSecs %= 3600
+	d.Minutes = totalSecs / 60
+	d.Seconds = seconds - float64(d.Days*86400+d.Hours*3600+d.Minutes*60)
+	if d.Seconds < 0 {
+		d.Seconds = 0
+	}
+	return d
+}
+
+// addTimeDuration adds or subtracts a duration from a time.Time.
+func addTimeDuration(t time.Time, dur XSDuration, op string) time.Time {
+	months := dur.Years*12 + dur.Months
+	days := dur.Days
+	secs := time.Duration(dur.Hours)*time.Hour + time.Duration(dur.Minutes)*time.Minute +
+		time.Duration(dur.Seconds*float64(time.Second))
+	if dur.Negative {
+		months = -months
+		days = -days
+		secs = -secs
+	}
+	if op == "-" {
+		months = -months
+		days = -days
+		secs = -secs
+	}
+	t = t.AddDate(0, months, days)
+	t = t.Add(secs)
+	return t
+}
+
+// subtractTimes returns the duration between two time.Time values.
+func subtractTimes(a, b time.Time) XSDuration {
+	diff := a.Sub(b)
+	negative := diff < 0
+	if negative {
+		diff = -diff
+	}
+	totalSecs := int(diff.Seconds())
+	days := totalSecs / 86400
+	totalSecs %= 86400
+	hours := totalSecs / 3600
+	totalSecs %= 3600
+	minutes := totalSecs / 60
+	secs := diff.Seconds() - float64(days*86400+hours*3600+minutes*60)
+	if secs < 0 {
+		secs = 0
+	}
+	return XSDuration{
+		Negative: negative,
+		Days:     days,
+		Hours:    hours,
+		Minutes:  minutes,
+		Seconds:  secs,
+	}
+}
+
+// durationToSeconds converts a duration to approximate total seconds for comparison.
+func durationToSeconds(d XSDuration) float64 {
+	total := float64(d.Years)*365.25*24*3600 +
+		float64(d.Months)*30.4375*24*3600 +
+		float64(d.Days)*24*3600 +
+		float64(d.Hours)*3600 +
+		float64(d.Minutes)*60 +
+		d.Seconds
+	if d.Negative {
+		total = -total
+	}
+	return total
+}
+
+func doCompareTime(op string, a, b time.Time) (bool, error) {
+	switch op {
+	case "=", "eq":
+		return a.Equal(b), nil
+	case "!=", "ne":
+		return !a.Equal(b), nil
+	case "<", "lt":
+		return a.Before(b), nil
+	case "<=", "le":
+		return !a.After(b), nil
+	case ">", "gt":
+		return a.After(b), nil
+	case ">=", "ge":
+		return !a.Before(b), nil
+	}
+	return false, fmt.Errorf("unknown operator %s for time comparison", op)
 }
 
 func doCompareFloat(op string, a, b float64) (bool, error) {
@@ -571,7 +882,6 @@ const (
 func compareFunc(op string, a, b interface{}) (bool, error) {
 	var floatLeft, floatRight float64
 	var intLeft, intRight int
-	var int64Left, int64Right int64
 	var stringLeft, stringRight string
 	var boolLeft, boolRight bool
 	var dtLeft, dtRight datatype
@@ -583,30 +893,59 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	if boolRight, ok = b.(bool); ok {
 		dtRight = xBoolean
 	}
-	if floatLeft, ok = a.(float64); ok {
-		dtLeft = xDouble
+	// Numeric detection via ToFloat64 (handles float64, int, XSDouble, XSFloat, XSDecimal)
+	if f, ok := ToFloat64(a); ok {
+		floatLeft = f
+		if _, isInt := a.(int); isInt {
+			intLeft = a.(int)
+			dtLeft = xInteger
+		} else {
+			dtLeft = xDouble
+		}
 	}
-	if floatRight, ok = b.(float64); ok {
-		dtRight = xDouble
-	}
-	if intLeft, ok = a.(int); ok {
-		dtLeft = xInteger
-	}
-	if int64Left, ok = a.(int64); ok {
-		intLeft = int(int64Left)
-		dtLeft = xInteger
-	}
-	if intRight, ok = b.(int); ok {
-		dtRight = xInteger
-	}
-	if int64Right, ok = b.(int64); ok {
-		intRight = int(int64Right)
-		dtRight = xInteger
+	if f, ok := ToFloat64(b); ok {
+		floatRight = f
+		if _, isInt := b.(int); isInt {
+			intRight = b.(int)
+			dtRight = xInteger
+		} else {
+			dtRight = xDouble
+		}
 	}
 	if stringLeft, ok = a.(string); ok {
 		dtLeft = xString
+	} else if v, ok := a.(XSString); ok {
+		stringLeft = v.V
+		dtLeft = xString
+	} else if v, ok := a.(XSAnyURI); ok {
+		stringLeft = string(v)
+		dtLeft = xString
+	} else if v, ok := a.(XSUntypedAtomic); ok {
+		stringLeft = string(v)
+		dtLeft = xString
+	} else if v, ok := a.(XSHexBinary); ok {
+		stringLeft = string(v)
+		dtLeft = xString
+	} else if v, ok := a.(XSBase64Binary); ok {
+		stringLeft = string(v)
+		dtLeft = xString
 	}
 	if stringRight, ok = b.(string); ok {
+		dtRight = xString
+	} else if v, ok := b.(XSString); ok {
+		stringRight = v.V
+		dtRight = xString
+	} else if v, ok := b.(XSAnyURI); ok {
+		stringRight = string(v)
+		dtRight = xString
+	} else if v, ok := b.(XSUntypedAtomic); ok {
+		stringRight = string(v)
+		dtRight = xString
+	} else if v, ok := b.(XSHexBinary); ok {
+		stringRight = string(v)
+		dtRight = xString
+	} else if v, ok := b.(XSBase64Binary); ok {
+		stringRight = string(v)
 		dtRight = xString
 	}
 	if attLeft, ok := a.(*goxml.Attribute); ok {
@@ -628,16 +967,28 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 	if cdLeft, ok := a.(*goxml.CharData); ok {
 		dtLeft = xString
 		stringLeft = cdLeft.Contents
+	} else if cdLeft, ok := a.(goxml.CharData); ok {
+		dtLeft = xString
+		stringLeft = cdLeft.Contents
 	}
 	if cdRight, ok := b.(*goxml.CharData); ok {
+		dtRight = xString
+		stringRight = cdRight.Contents
+	} else if cdRight, ok := b.(goxml.CharData); ok {
 		dtRight = xString
 		stringRight = cdRight.Contents
 	}
 	if commentLeft, ok := a.(*goxml.Comment); ok {
 		dtLeft = xString
 		stringLeft = commentLeft.Contents
+	} else if commentLeft, ok := a.(goxml.Comment); ok {
+		dtLeft = xString
+		stringLeft = commentLeft.Contents
 	}
 	if commentRight, ok := b.(*goxml.Comment); ok {
+		dtRight = xString
+		stringRight = commentRight.Contents
+	} else if commentRight, ok := b.(goxml.Comment); ok {
 		dtRight = xString
 		stringRight = commentRight.Contents
 	}
@@ -657,9 +1008,17 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		return doCompareInt(op, intLeft, intRight)
 	}
 	if dtLeft == xDouble && dtRight == xInteger {
+		// If the float has a fractional part, use float comparison (e.g. 2.5 > 2).
+		// Otherwise promote to integer comparison for precision with large numbers.
+		if floatLeft != math.Trunc(floatLeft) || math.IsInf(floatLeft, 0) || math.IsNaN(floatLeft) {
+			return doCompareFloat(op, floatLeft, float64(intRight))
+		}
 		return doCompareInt(op, int(floatLeft), intRight)
 	}
 	if dtLeft == xInteger && dtRight == xDouble {
+		if floatRight != math.Trunc(floatRight) || math.IsInf(floatRight, 0) || math.IsNaN(floatRight) {
+			return doCompareFloat(op, float64(intLeft), floatRight)
+		}
 		return doCompareInt(op, intLeft, int(floatRight))
 	}
 	if dtLeft == xString && dtRight == xString {
@@ -698,6 +1057,89 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		return doCompareFloat(op, floatLeft, float64(intRight))
 	}
 
+	// QName comparisons
+	if qa, ok := a.(XSQName); ok {
+		if qb, ok := b.(XSQName); ok {
+			eq := qa.Namespace == qb.Namespace && qa.Localname == qb.Localname
+			switch op {
+			case "=", "eq":
+				return eq, nil
+			case "!=", "ne":
+				return !eq, nil
+			default:
+				return false, NewXPathError("XPTY0004", fmt.Sprintf("QName comparison '%s' not supported", op))
+			}
+		}
+	}
+
+	// g* calendar type comparisons (string-based equality)
+	if ga, ok := a.(XSGYear); ok {
+		if gb, ok := b.(XSGYear); ok {
+			return doCompareString(op, string(ga), string(gb))
+		}
+	}
+	if ga, ok := a.(XSGMonth); ok {
+		if gb, ok := b.(XSGMonth); ok {
+			return doCompareString(op, string(ga), string(gb))
+		}
+	}
+	if ga, ok := a.(XSGDay); ok {
+		if gb, ok := b.(XSGDay); ok {
+			return doCompareString(op, string(ga), string(gb))
+		}
+	}
+	if ga, ok := a.(XSGYearMonth); ok {
+		if gb, ok := b.(XSGYearMonth); ok {
+			return doCompareString(op, string(ga), string(gb))
+		}
+	}
+	if ga, ok := a.(XSGMonthDay); ok {
+		if gb, ok := b.(XSGMonthDay); ok {
+			return doCompareString(op, string(ga), string(gb))
+		}
+	}
+
+	// Duration comparisons
+	if durLeft, ok := a.(XSDuration); ok {
+		if durRight, ok := b.(XSDuration); ok {
+			switch op {
+			case "=", "eq":
+				return durLeft == durRight, nil
+			case "!=", "ne":
+				return durLeft != durRight, nil
+			case "<", "lt":
+				return durationToSeconds(durLeft) < durationToSeconds(durRight), nil
+			case "<=", "le":
+				return durationToSeconds(durLeft) <= durationToSeconds(durRight), nil
+			case ">", "gt":
+				return durationToSeconds(durLeft) > durationToSeconds(durRight), nil
+			case ">=", "ge":
+				return durationToSeconds(durLeft) >= durationToSeconds(durRight), nil
+			default:
+				return false, NewXPathError("XPTY0004", fmt.Sprintf("duration comparison '%s' not supported", op))
+			}
+		}
+	}
+	// DateTime/Date/Time comparisons
+	if dtLeftVal, ok := a.(XSDateTime); ok {
+		if dtRightVal, ok := b.(XSDateTime); ok {
+			tl, tr := time.Time(dtLeftVal), time.Time(dtRightVal)
+			return doCompareTime(op, tl, tr)
+		}
+	}
+	if dtLeftVal, ok := a.(XSDate); ok {
+		if dtRightVal, ok := b.(XSDate); ok {
+			tl, tr := time.Time(dtLeftVal), time.Time(dtRightVal)
+			return doCompareTime(op, tl, tr)
+		}
+	}
+	if dtLeftVal, ok := a.(XSTime); ok {
+		if dtRightVal, ok := b.(XSTime); ok {
+			tl, tr := time.Time(dtLeftVal), time.Time(dtRightVal)
+			return doCompareTime(op, tl, tr)
+		}
+	}
+
 	// Boolean comparisons: XPath general comparison promotes the non-boolean
 	// operand to boolean via BooleanValue, then compares as booleans.
 	if dtLeft == xBoolean || dtRight == xBoolean {
@@ -710,7 +1152,7 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 		return doCompareBool(op, boolLeft, boolRight)
 	}
 
-	return false, fmt.Errorf("FORG0001")
+	return false, NewXPathError("FORG0001", fmt.Sprintf("cannot compare %T with %T", a, b))
 }
 
 // toBoolForCompare converts a non-boolean operand to bool for general comparison.
@@ -758,7 +1200,18 @@ func doCompareBool(op string, a, b bool) (bool, error) {
 	return false, fmt.Errorf("unknown op %s", op)
 }
 
+func isValueComp(op string) bool {
+	switch op {
+	case "eq", "ne", "lt", "le", "gt", "ge":
+		return true
+	}
+	return false
+}
+
 func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
+	if lhs == nil || rhs == nil {
+		return nil, fmt.Errorf("unexpected expression in comparison")
+	}
 	f := func(ctx *Context) (Sequence, error) {
 		savedSeq := ctx.sequence
 		left, err := lhs(ctx)
@@ -769,6 +1222,19 @@ func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 		right, err := rhs(ctx)
 		if err != nil {
 			return nil, err
+		}
+		// Value comparisons (eq, ne, ...) return () if either operand is empty,
+		// and XPTY0004 if either has more than one item.
+		if isValueComp(op) {
+			if len(left) == 0 || len(right) == 0 {
+				return Sequence{}, nil
+			}
+			if len(left) > 1 {
+				return nil, NewXPathError("XPTY0004", "left operand of value comparison has more than one item")
+			}
+			if len(right) > 1 {
+				return nil, NewXPathError("XPTY0004", "right operand of value comparison has more than one item")
+			}
 		}
 		for _, leftitem := range left {
 			for _, rightitem := range right {
@@ -787,6 +1253,9 @@ func doCompare(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 }
 
 func doCompareNode(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
+	if lhs == nil || rhs == nil {
+		return nil, fmt.Errorf("unexpected expression in node comparison '%s'", op)
+	}
 	f := func(ctx *Context) (Sequence, error) {
 		left, err := lhs(ctx)
 		if err != nil {
@@ -805,22 +1274,20 @@ func doCompareNode(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 		if len(right) > 1 {
 			return Sequence{}, fmt.Errorf("A sequence of more than one item is not allowed as the second operand of '%s'", op)
 		}
-		var leftElement, rightElement *goxml.Element
-		if elt, ok := left[0].(*goxml.Element); ok {
-			leftElement = elt
-		}
-		if elt, ok := right[0].(*goxml.Element); ok {
-			rightElement = elt
+		leftNode, leftOk := left[0].(goxml.XMLNode)
+		rightNode, rightOk := right[0].(goxml.XMLNode)
+		if !leftOk || !rightOk {
+			return nil, fmt.Errorf("operands of '%s' must be nodes", op)
 		}
 
 		if op == "is" {
-			return Sequence{leftElement.ID == rightElement.ID}, nil
+			return Sequence{leftNode.GetID() == rightNode.GetID()}, nil
 		}
 		if op == "<<" {
-			return Sequence{leftElement.ID < rightElement.ID}, nil
+			return Sequence{leftNode.GetID() < rightNode.GetID()}, nil
 		}
 		if op == ">>" {
-			return Sequence{leftElement.ID > rightElement.ID}, nil
+			return Sequence{leftNode.GetID() > rightNode.GetID()}, nil
 		}
 		return Sequence{false}, nil
 	}
@@ -836,8 +1303,9 @@ func NumberValue(s Sequence) (float64, error) {
 		return math.NaN(), fmt.Errorf("Required cardinality of first argument of fn:number() is zero or one; supplied value has cardinality more than one")
 	}
 	firstItem := s[0]
-	if num, ok := firstItem.(int); ok {
-		return float64(num), nil
+	// Try the fast path: all numeric wrapper types
+	if f, ok := ToFloat64(firstItem); ok {
+		return f, nil
 	}
 	if attr, ok := firstItem.(*goxml.Attribute); ok {
 		numberF, err := strconv.ParseFloat(attr.Value, 64)
@@ -860,18 +1328,36 @@ func NumberValue(s Sequence) (float64, error) {
 		}
 		return numberF, nil
 	}
-
-	if flt, ok := firstItem.(float64); ok {
-		return flt, nil
-	}
-	if str, ok := firstItem.(string); ok {
-		numberF, err := strconv.ParseFloat(str, 64)
+	if cd, ok := firstItem.(goxml.CharData); ok {
+		numberF, err := strconv.ParseFloat(strings.TrimSpace(cd.Contents), 64)
 		if err != nil {
 			return math.NaN(), nil
 		}
 		return numberF, nil
 	}
-	return math.NaN(), nil
+	if cd, ok := firstItem.(*goxml.CharData); ok {
+		numberF, err := strconv.ParseFloat(strings.TrimSpace(cd.Contents), 64)
+		if err != nil {
+			return math.NaN(), nil
+		}
+		return numberF, nil
+	}
+
+	// Convert string-like types to their string value for numeric parsing
+	var str string
+	switch v := firstItem.(type) {
+	case string:
+		str = v
+	case XSUntypedAtomic:
+		str = string(v)
+	default:
+		return math.NaN(), nil
+	}
+	numberF, err := strconv.ParseFloat(strings.TrimSpace(str), 64)
+	if err != nil {
+		return math.NaN(), nil
+	}
+	return numberF, nil
 }
 
 // BooleanValue returns the effective boolean value of the sequence.
@@ -891,14 +1377,18 @@ func BooleanValue(s Sequence) (bool, error) {
 			return b, nil
 		} else if val, ok := itm.(string); ok {
 			return val != "", nil
-		} else if val, ok := itm.(float64); ok {
-			// val == val false if NaN
-			return val != 0 && val == val, nil
-		} else if val, ok := itm.(int); ok {
-			return val != 0, nil
+		} else if val, ok := itm.(XSString); ok {
+			return val.V != "", nil
+		} else if val, ok := itm.(XSAnyURI); ok {
+			return string(val) != "", nil
+		} else if val, ok := itm.(XSUntypedAtomic); ok {
+			return string(val) != "", nil
+		} else if f, ok := ToFloat64(itm); ok {
+			// f == f is false if NaN
+			return f != 0 && f == f, nil
 		}
 	}
-	return false, fmt.Errorf("FORG0006 Invalid argument type")
+	return false, NewXPathError("FORG0006", " Invalid argument type")
 }
 
 // StringValue returns the string value of the sequence by concatenating the
@@ -956,7 +1446,7 @@ func parseExprSingle(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "3 parseExprSingle")
 	var ef EvalFunc
 	var err error
-	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"for", "some", "every", "if"}); ok {
+	if op, ok := tl.readNexttokIfIsOneOfValue([]string{"for", "some", "every", "if", "let"}); ok {
 		switch op {
 		case "for":
 			ef, err = parseForExpr(tl)
@@ -966,6 +1456,8 @@ func parseExprSingle(tl *Tokenlist) (EvalFunc, error) {
 		case "if":
 			leaveStep(tl, "3 parseExprSingle")
 			ef, err = parseIfExpr(tl)
+		case "let":
+			ef, err = parseLetExpr(tl)
 		}
 		leaveStep(tl, "3 parseExprSingle")
 		return ef, err
@@ -1087,6 +1579,100 @@ func parseForExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 	leaveStep(tl, "4 parseForExpr")
 	return ret, nil
+}
+
+// [11] LetExpr ::= SimpleLetClause "return" ExprSingle
+// [12] SimpleLetClause ::= "let" SimpleLetBinding ("," SimpleLetBinding)*
+// [13] SimpleLetBinding ::= "$" VarName ":=" ExprSingle
+func parseLetExpr(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "11 parseLetExpr")
+
+	type letBinding struct {
+		varname string
+		expr    EvalFunc
+	}
+	var bindings []letBinding
+
+	for {
+		// Read $VarName
+		varTok, err := tl.read()
+		if err != nil || varTok.Typ != tokVarname {
+			leaveStep(tl, "11 parseLetExpr")
+			return nil, fmt.Errorf("expected variable name in let expression")
+		}
+		varname := varTok.Value.(string)
+
+		// Read :=
+		if err := tl.skipType(tokOperator); err != nil { // :
+			return nil, fmt.Errorf("expected ':=' after variable name in let expression")
+		}
+		if err := tl.skipType(tokOperator); err != nil { // =
+			return nil, fmt.Errorf("expected ':=' after variable name in let expression")
+		}
+
+		// Read value expression
+		valEf, err := parseExprSingle(tl)
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, letBinding{varname: varname, expr: valEf})
+
+		// Check for comma (more bindings) or "return"
+		if tl.nexttokIsValue("return") {
+			break
+		}
+		if !tl.nexttokIsTyp(tokComma) {
+			break
+		}
+		tl.read() // consume comma
+	}
+
+	// Read "return"
+	if err := tl.skipNCName("return"); err != nil {
+		leaveStep(tl, "11 parseLetExpr")
+		return nil, fmt.Errorf("expected 'return' in let expression")
+	}
+
+	// Read return expression
+	returnEf, err := parseExprSingle(tl)
+	if err != nil {
+		leaveStep(tl, "11 parseLetExpr")
+		return nil, err
+	}
+	if returnEf == nil {
+		leaveStep(tl, "11 parseLetExpr")
+		return nil, fmt.Errorf("expected expression after 'return' in let expression")
+	}
+
+	ef := func(ctx *Context) (Sequence, error) {
+		// Save old variable values
+		oldValues := make(map[string]Sequence, len(bindings))
+		for _, b := range bindings {
+			oldValues[b.varname] = ctx.vars[b.varname]
+		}
+		// Bind new values
+		for _, b := range bindings {
+			val, err := b.expr(ctx)
+			if err != nil {
+				// Restore
+				for _, b2 := range bindings {
+					ctx.vars[b2.varname] = oldValues[b2.varname]
+				}
+				return nil, err
+			}
+			ctx.vars[b.varname] = val
+		}
+		// Evaluate return expression
+		result, err := returnEf(ctx)
+		// Restore old values
+		for _, b := range bindings {
+			ctx.vars[b.varname] = oldValues[b.varname]
+		}
+		return result, err
+	}
+
+	leaveStep(tl, "11 parseLetExpr")
+	return ef, nil
 }
 
 // [6] QuantifiedExpr ::= ("some" | "every") "$" VarName "in" ExprSingle ("," "$" VarName "in" ExprSingle)* "satisfies" ExprSingle
@@ -1251,6 +1837,10 @@ func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 		leaveStep(tl, "7 parseIfExpr")
 		return nil, err
 	}
+	if boolEval == nil {
+		leaveStep(tl, "7 parseIfExpr")
+		return nil, fmt.Errorf("expected condition expression in if")
+	}
 	if err = tl.skipType(tokCloseParen); err != nil {
 		leaveStep(tl, "7 parseIfExpr")
 		return nil, err
@@ -1263,6 +1853,10 @@ func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 		leaveStep(tl, "7 parseIfExpr")
 		return nil, err
 	}
+	if thenpart == nil {
+		leaveStep(tl, "7 parseIfExpr")
+		return nil, fmt.Errorf("expected expression after 'then'")
+	}
 	if err = tl.skipNCName("else"); err != nil {
 		leaveStep(tl, "7 parseIfExpr")
 		return nil, err
@@ -1270,6 +1864,10 @@ func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 	if elsepart, err = parseExprSingle(tl); err != nil {
 		leaveStep(tl, "7 parseIfExpr")
 		return nil, err
+	}
+	if elsepart == nil {
+		leaveStep(tl, "7 parseIfExpr")
+		return nil, fmt.Errorf("expected expression after 'else'")
 	}
 
 	f := func(ctx *Context) (Sequence, error) {
@@ -1496,8 +2094,32 @@ func parseRangeExpr(tl *Tokenlist) (EvalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		var seq Sequence
-		for i := lhsNum; i <= rhsNum; i++ {
+		// Per XPath spec: if either is NaN or Inf, or lhs > rhs, return empty
+		if math.IsNaN(lhsNum) || math.IsNaN(rhsNum) || math.IsInf(lhsNum, 0) || math.IsInf(rhsNum, 0) {
+			return Sequence{}, nil
+		}
+		startF := math.Round(lhsNum)
+		endF := math.Round(rhsNum)
+		if startF > endF {
+			return Sequence{}, nil
+		}
+		// Guard against extremely large ranges
+		if endF-startF > 10_000_000 {
+			return nil, fmt.Errorf("range too large: %v to %v", startF, endF)
+		}
+		start := int(startF)
+		end := int(endF)
+		// Guard against int overflow: if start or end is at MaxInt64,
+		// the loop increment would overflow
+		if start == math.MaxInt64 || end == math.MaxInt64 {
+			if start == end {
+				return Sequence{start}, nil
+			}
+			return nil, fmt.Errorf("range too large: integer overflow")
+		}
+		count := end - start + 1
+		seq := make(Sequence, 0, count)
+		for i := start; i <= end; i++ {
 			seq = append(seq, i)
 		}
 		return seq, nil
@@ -1536,24 +2158,29 @@ func parseAdditiveExpr(tl *Tokenlist) (EvalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		sum, err := NumberValue(s)
-		if err != nil {
-			return nil, err
+		if len(s) == 0 {
+			return Sequence{}, nil
 		}
+
+		// Check if we're dealing with durations or date/time types
+		result := s[0]
 		for i := 1; i < len(efs); i++ {
 			ctx.sequence = savedSeq
-			s, err := efs[i](ctx)
+			s2, err := efs[i](ctx)
 			if err != nil {
 				return nil, err
 			}
-			flt, err := NumberValue(s)
-			if operator[i-1] == "+" {
-				sum += flt
-			} else {
-				sum -= flt
+			if len(s2) == 0 {
+				return Sequence{}, nil
 			}
+			op := operator[i-1]
+			res, err := addItems(result, s2[0], op)
+			if err != nil {
+				return nil, err
+			}
+			result = res
 		}
-		return Sequence{sum}, nil
+		return Sequence{result}, nil
 	}
 	leaveStep(tl, "12 parseAdditiveExpr")
 	return ef, nil
@@ -1573,6 +2200,12 @@ func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 			leaveStep(tl, "13 parseMultiplicativeExpr")
 			return nil, err
 		}
+		if ef == nil {
+			if len(efs) == 0 {
+				return nil, nil
+			}
+			break
+		}
 		efs = append(efs, ef)
 		if op, ok := tl.readNexttokIfIsOneOfValue([]string{"*", "div", "idiv", "mod"}); ok {
 			operator = append(operator, op)
@@ -1591,29 +2224,120 @@ func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
+		if len(s) == 0 {
+			return Sequence{}, nil
+		}
+
+		// Check for duration types in first operand
+		if dur, ok := s[0].(XSDuration); ok {
+			result := dur
+			for i := 1; i < len(efs); i++ {
+				ctx.sequence = savedSeq
+				s2, err := efs[i](ctx)
+				if err != nil {
+					return nil, err
+				}
+				if len(s2) == 0 {
+					return Sequence{}, nil
+				}
+				op := operator[i-1]
+				// Duration * number, Duration div number, Duration div Duration
+				if dur2, ok := s2[0].(XSDuration); ok && op == "div" {
+					// Duration div Duration = number
+					a := durationToSeconds(result)
+					b := durationToSeconds(dur2)
+					if b == 0 {
+						return nil, NewXPathError("FODT0002", "division by zero-duration")
+					}
+					return Sequence{a / b}, nil
+				}
+				flt, err := NumberValue(Sequence{s2[0]})
+				if err != nil {
+					return nil, err
+				}
+				ms := durationToMonthsAndSeconds(result)
+				switch op {
+				case "*":
+					ms.months = int(math.Round(float64(ms.months) * flt))
+					ms.seconds = ms.seconds * flt
+				case "div":
+					if flt == 0 {
+						return nil, NewXPathError("FODT0002", "division by zero")
+					}
+					ms.months = int(math.Round(float64(ms.months) / flt))
+					ms.seconds = ms.seconds / flt
+				}
+				result = monthsAndSecondsToDuration(ms.months, ms.seconds)
+			}
+			return Sequence{result}, nil
+		}
+
+		// Check if second operand is duration (number * Duration)
+		if len(efs) == 2 && operator[0] == "*" {
+			ctx.sequence = savedSeq
+			s2, err := efs[1](ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(s2) > 0 {
+				if dur, ok := s2[0].(XSDuration); ok {
+					flt, err := NumberValue(s)
+					if err != nil {
+						return nil, err
+					}
+					ms := durationToMonthsAndSeconds(dur)
+					ms.months = int(math.Round(float64(ms.months) * flt))
+					ms.seconds = ms.seconds * flt
+					return Sequence{monthsAndSecondsToDuration(ms.months, ms.seconds)}, nil
+				}
+			}
+		}
+
 		sum, err := NumberValue(s)
 		if err != nil {
 			return nil, err
 		}
+		resultType := NumericType(s[0])
 		for i := 1; i < len(efs); i++ {
 			ctx.sequence = savedSeq
-			s, err := efs[i](ctx)
+			s2, err := efs[i](ctx)
 			if err != nil {
 				return nil, err
 			}
-			flt, err := NumberValue(s)
+			if len(s2) == 0 {
+				return Sequence{}, nil
+			}
+			flt, err := NumberValue(s2)
+			opType := PromoteNumeric(resultType, NumericType(s2[0]))
 			switch operator[i-1] {
 			case "*":
 				sum *= flt
+				resultType = opType
 			case "div":
 				sum /= flt
+				// div always produces at least decimal
+				if opType < NumDecimal {
+					opType = NumDecimal
+				}
+				resultType = opType
 			case "idiv":
-				sum = float64(int(sum / flt))
+				if flt == 0 {
+					return nil, NewXPathError("FOAR0002", "integer division by zero")
+				}
+				if math.IsNaN(sum) || math.IsInf(sum, 0) {
+					return nil, NewXPathError("FOAR0002", "integer division with NaN or Inf")
+				}
+				sum = math.Trunc(sum / flt)
+				resultType = NumInteger
 			case "mod":
 				sum = math.Mod(sum, flt)
+				resultType = opType
 			}
 		}
-		return Sequence{sum}, nil
+		if resultType == NumInteger {
+			return Sequence{int(sum)}, nil
+		}
+		return Sequence{WrapNumeric(sum, resultType)}, nil
 	}
 
 	leaveStep(tl, "13 parseMultiplicativeExpr")
@@ -1662,8 +2386,6 @@ func parseUnionExpr(tl *Tokenlist) (EvalFunc, error) {
 		for _, itm := range seq {
 			if n, ok := itm.(goxml.XMLNode); ok {
 				nodes = append(nodes, n)
-			} else {
-				fmt.Printf("14: unknown type %T\n", itm)
 			}
 		}
 		// document order
@@ -1786,22 +2508,26 @@ func parseInstanceofExpr(tl *Tokenlist) (EvalFunc, error) {
 		var oi string
 		oi, _ = tl.readNexttokIfIsOneOfValue([]string{"*", "+", "?"})
 		inOfExpr := func(ctx *Context) (Sequence, error) {
-			_, err := ef(ctx)
+			seq, err := ef(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			if oi == "" && len(ctx.sequence) != 1 {
+			if oi == "" && len(seq) != 1 {
 				return Sequence{false}, nil
 			}
-			if oi == "+" && len(ctx.sequence) < 1 {
+			if oi == "+" && len(seq) < 1 {
 				return Sequence{false}, nil
 			}
-			if oi == "?" && len(ctx.sequence) > 1 {
+			if oi == "?" && len(seq) > 1 {
 				return Sequence{false}, nil
 			}
 
-			for _, itm := range ctx.sequence {
+			if tf == nil {
+				// No type test parsed — unknown type, always false
+				return Sequence{false}, nil
+			}
+			for _, itm := range seq {
 				if !tf(ctx, itm) {
 					return Sequence{false}, nil
 				}
@@ -1844,11 +2570,46 @@ func parseTreatExpr(tl *Tokenlist) (EvalFunc, error) {
 			return evaler, nil
 		}
 
-		_, err := parseSequenceType(tl)
+		tf, err := parseSequenceType(tl)
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("treat as not implemented")
+		// Read optional occurrence indicator
+		var oi string
+		oi, _ = tl.readNexttokIfIsOneOfValue([]string{"*", "+", "?"})
+		baseEf := ef
+		ef = func(ctx *Context) (Sequence, error) {
+			seq, err := baseEf(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// Check cardinality
+			switch oi {
+			case "":
+				if len(seq) != 1 {
+					return nil, NewXPathError("XPDY0050", fmt.Sprintf("treat as requires exactly one item, got %d", len(seq)))
+				}
+			case "+":
+				if len(seq) < 1 {
+					return nil, NewXPathError("XPDY0050", "treat as requires at least one item, got empty")
+				}
+			case "?":
+				if len(seq) > 1 {
+					return nil, NewXPathError("XPDY0050", fmt.Sprintf("treat as requires at most one item, got %d", len(seq)))
+				}
+			}
+			// Check type if tf is available
+			if tf != nil {
+				for _, itm := range seq {
+					if !tf(ctx, itm) {
+						return nil, NewXPathError("XPDY0050", "item does not match required type")
+					}
+				}
+			}
+			return seq, nil
+		}
+		leaveStep(tl, "17 parseTreatExpr")
+		return ef, nil
 	}
 
 	leaveStep(tl, "17 parseTreatExpr")
@@ -1871,23 +2632,77 @@ func parseCastableExpr(tl *Tokenlist) (EvalFunc, error) {
 			leaveStep(tl, "18 parseCastableExpr")
 			return nil, err
 		}
-		if err = tl.skipType(tokQName); err != nil {
+		typTok, err := tl.read()
+		if err != nil {
 			leaveStep(tl, "18 parseCastableExpr")
-			return nil, err
+			return nil, fmt.Errorf("expected type name after 'castable as'")
 		}
-		tl.readNexttokIfIsOneOfValueAndType([]string{"?"}, tokOperator)
-		return nil, fmt.Errorf("castable as not implemented")
+		typName := typTok.Value.(string)
+		// XPST0080: static error for abstract types
+		switch typName {
+		case "xs:NOTATION", "xs:anyAtomicType", "xs:anySimpleType":
+			return nil, NewXPathError("XPST0080", fmt.Sprintf("cannot use %s as cast target", typName))
+		}
+		optional := false
+		if _, optOk := tl.readNexttokIfIsOneOfValueAndType([]string{"?"}, tokOperator); optOk {
+			optional = true
+		}
+		baseEf := ef
+		ef = func(ctx *Context) (Sequence, error) {
+			seq, err := baseEf(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(seq) == 0 {
+				return Sequence{optional}, nil
+			}
+			if len(seq) > 1 {
+				return Sequence{false}, nil
+			}
+			item := seq[0]
+			// Check type compatibility
+			sourceType := TypeIDOf(item)
+			if !castAllowed(sourceType, typName) {
+				return Sequence{false}, nil
+			}
+			// XPST0080: cannot cast to abstract types
+			switch typName {
+			case "xs:NOTATION", "xs:anyAtomicType", "xs:anySimpleType":
+				return Sequence{false}, nil
+			}
+			// Try the actual cast — if it succeeds, castable is true
+			castPrefix := ""
+			castLocal := typName
+			if idx := strings.Index(typName, ":"); idx >= 0 {
+				castPrefix = typName[:idx]
+				castLocal = typName[idx+1:]
+			}
+			castNS := nsFN
+			if castPrefix != "" {
+				if ns, nsOk := ctx.Namespaces[castPrefix]; nsOk {
+					castNS = ns
+				}
+			}
+			fn := getfunction(castNS, castLocal)
+			if fn != nil {
+				_, castErr := fn.F(ctx, []Sequence{{item}})
+				return Sequence{castErr == nil}, nil
+			}
+			return Sequence{false}, nil
+		}
+		leaveStep(tl, "18 parseCastableExpr")
+		return ef, nil
 	}
 
 	leaveStep(tl, "18 parseCastableExpr")
 	return ef, nil
 }
 
-// [19] CastExpr ::= UnaryExpr ( "cast" "as" SingleType )?
+// [19] CastExpr ::= ArrowExpr ( "cast" "as" SingleType )?
 func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "19 parseCastExpr")
 	var ef EvalFunc
-	ef, err := parseUnaryExpr(tl)
+	ef, err := parseArrowExpr(tl)
 	if err != nil {
 		leaveStep(tl, "19 parseCastExpr")
 		return nil, err
@@ -1907,6 +2722,16 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 			return nil, fmt.Errorf("expected type name after 'cast as'")
 		}
 		typName := typTok.Value.(string)
+		// XPST0080: static error for abstract types
+		switch typName {
+		case "xs:NOTATION", "xs:anyAtomicType", "xs:anySimpleType":
+			return nil, NewXPathError("XPST0080", fmt.Sprintf("cannot use %s as cast target", typName))
+		}
+		// Check for optional "?" occurrence indicator.
+		optional := false
+		if _, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"?"}, tokOperator); ok {
+			optional = true
+		}
 		baseEf := ef
 		ef = func(ctx *Context) (Sequence, error) {
 			seq, err := baseEf(ctx)
@@ -1914,41 +2739,187 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 				return nil, err
 			}
 			if len(seq) == 0 {
-				return nil, fmt.Errorf("XPTY0004: empty sequence cannot be cast to %s", typName)
+				if optional {
+					return Sequence{}, nil
+				}
+				return nil, NewXPathError("XPTY0004", fmt.Sprintf("empty sequence cannot be cast to %s", typName))
+			}
+			// Reject invalid cast target types
+			switch typName {
+			case "xs:NOTATION", "xs:anyAtomicType", "xs:anySimpleType":
+				return nil, NewXPathError("XPST0080", fmt.Sprintf("cannot cast to %s", typName))
 			}
 			item := seq[0]
+			// Validate cast compatibility
+			sourceType := TypeIDOf(item)
+			if !castAllowed(sourceType, typName) {
+				return nil, NewXPathError("XPTY0004", fmt.Sprintf("cannot cast %s to %s", sourceType, typName))
+			}
 			switch typName {
-			case "xs:integer", "xs:int":
-				n, err := NumberValue(Sequence{item})
-				if err != nil {
-					return nil, err
+			case "xs:integer", "xs:int",
+				"xs:long", "xs:short", "xs:byte",
+				"xs:unsignedLong", "xs:unsignedInt", "xs:unsignedShort", "xs:unsignedByte",
+				"xs:nonPositiveInteger", "xs:nonNegativeInteger",
+				"xs:negativeInteger", "xs:positiveInteger":
+				// Route through registered constructor to get correct subtype tag
+				castLocal := typName[3:] // strip "xs:"
+				fn := getfunction(nsXS, castLocal)
+				if fn != nil {
+					return fn.F(ctx, []Sequence{{item}})
 				}
-				return Sequence{int(n)}, nil
-			case "xs:double", "xs:float", "xs:decimal":
-				n, err := NumberValue(Sequence{item})
-				if err != nil {
-					return nil, err
+				return xsInteger(ctx, []Sequence{{item}})
+			case "xs:double":
+				return xsDouble(ctx, []Sequence{{item}})
+			case "xs:float":
+				return xsFloat(ctx, []Sequence{{item}})
+			case "xs:decimal":
+				return xsDecimal(ctx, []Sequence{{item}})
+			case "xs:string", "xs:normalizedString", "xs:token",
+				"xs:language", "xs:NMTOKEN", "xs:Name", "xs:NCName",
+				"xs:ID", "xs:IDREF", "xs:ENTITY",
+				"xs:anyURI", "xs:untypedAtomic",
+				"xs:hexBinary", "xs:base64Binary":
+				// Route through registered constructor for correct type tag
+				castLocal := typName[3:] // strip "xs:"
+				fn := getfunction(nsXS, castLocal)
+				if fn != nil {
+					return fn.F(ctx, []Sequence{{item}})
 				}
-				return Sequence{n}, nil
-			case "xs:string":
 				sv, err := StringValue(Sequence{item})
 				if err != nil {
 					return nil, err
 				}
 				return Sequence{sv}, nil
 			case "xs:boolean":
-				bv, err := BooleanValue(Sequence{item})
+				// Handle numeric → boolean: 0/NaN → false, other → true
+				if f, ok := ToFloat64(item); ok {
+					return Sequence{f != 0 && !math.IsNaN(f)}, nil
+				}
+				if b, ok := item.(bool); ok {
+					return Sequence{b}, nil
+				}
+				// xs:boolean cast uses XML Schema lexical rules
+				sv, err := StringValue(Sequence{item})
 				if err != nil {
 					return nil, err
 				}
-				return Sequence{bv}, nil
+				sv = strings.TrimSpace(sv)
+				switch sv {
+				case "true", "1":
+					return Sequence{true}, nil
+				case "false", "0":
+					return Sequence{false}, nil
+				default:
+					return nil, NewXPathError("FORG0001", fmt.Sprintf("cannot cast %q to xs:boolean", sv))
+				}
 			default:
-				return nil, fmt.Errorf("XPTY0004: unsupported cast type %s", typName)
+				// Try calling the XSD constructor function
+				castPrefix := ""
+				castLocal := typName
+				if idx := strings.Index(typName, ":"); idx >= 0 {
+					castPrefix = typName[:idx]
+					castLocal = typName[idx+1:]
+				}
+				castNS := nsFN
+				if castPrefix != "" {
+					if ns, ok := ctx.Namespaces[castPrefix]; ok {
+						castNS = ns
+					}
+				}
+				fn := getfunction(castNS, castLocal)
+				if fn != nil {
+					return fn.F(ctx, []Sequence{{item}})
+				}
+				return nil, NewXPathError("XPTY0004", fmt.Sprintf("unsupported cast type %s", typName))
 			}
 		}
 	}
 
 	leaveStep(tl, "19 parseCastExpr")
+	return ef, nil
+}
+
+// [29] ArrowExpr ::= UnaryExpr ("=>" ArrowFunctionSpecifier ArgumentList)*
+func parseArrowExpr(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "29 parseArrowExpr")
+	ef, err := parseUnaryExpr(tl)
+	if err != nil {
+		leaveStep(tl, "29 parseArrowExpr")
+		return nil, err
+	}
+
+	for {
+		if _, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"=>"}, tokOperator); !ok {
+			break
+		}
+		// ArrowFunctionSpecifier ::= EQName | VarRef | ParenthesizedExpr
+		fnTok, err := tl.read()
+		if err != nil {
+			leaveStep(tl, "29 parseArrowExpr")
+			return nil, fmt.Errorf("expected function name after '=>'")
+		}
+		var fnName string
+		if fnTok.Typ == tokQName {
+			fnName = fnTok.Value.(string)
+		} else {
+			leaveStep(tl, "29 parseArrowExpr")
+			return nil, fmt.Errorf("expected function name after '=>', got %v", fnTok)
+		}
+
+		// Parse ArgumentList: "(" (ExprSingle ("," ExprSingle)*)? ")"
+		if err := tl.skipType(tokOpenParen); err != nil {
+			leaveStep(tl, "29 parseArrowExpr")
+			return nil, fmt.Errorf("'(' expected after arrow function name")
+		}
+		var argEfs []EvalFunc
+		if !tl.nexttokIsTyp(tokCloseParen) {
+			for {
+				argEf, err := parseExprSingle(tl)
+				if err != nil {
+					return nil, err
+				}
+				argEfs = append(argEfs, argEf)
+				if !tl.nexttokIsTyp(tokComma) {
+					break
+				}
+				tl.read() // consume comma
+			}
+		}
+		if err := tl.skipType(tokCloseParen); err != nil {
+			return nil, fmt.Errorf("')' expected in arrow function arguments")
+		}
+
+		baseEf := ef
+		capturedName := fnName
+		capturedArgEfs := argEfs
+		ef = func(ctx *Context) (Sequence, error) {
+			// Evaluate the left-hand side (becomes first argument)
+			leftSeq, err := baseEf(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// Evaluate additional arguments
+			allArgs := make([]Sequence, 1+len(capturedArgEfs))
+			allArgs[0] = leftSeq
+			for i, argEf := range capturedArgEfs {
+				argSeq, err := argEf(ctx)
+				if err != nil {
+					return nil, err
+				}
+				allArgs[i+1] = argSeq
+			}
+			// Resolve function name and call
+			fnPrefix := ""
+			fnLocalName := capturedName
+			if idx := strings.Index(capturedName, ":"); idx >= 0 {
+				fnPrefix = capturedName[:idx]
+				fnLocalName = capturedName[idx+1:]
+			}
+			return callFunctionResolved(fnPrefix, fnLocalName, allArgs, ctx)
+		}
+	}
+
+	leaveStep(tl, "29 parseArrowExpr")
 	return ef, nil
 }
 
@@ -1967,7 +2938,7 @@ func parseUnaryExpr(tl *Tokenlist) (EvalFunc, error) {
 			break
 		}
 	}
-	pv, err := parseValueExpr(tl)
+	pv, err := parseSimpleMapExpr(tl)
 	if err != nil {
 		leaveStep(tl, "20 parseUnaryExpr")
 		return nil, err
@@ -1997,18 +2968,70 @@ func parseUnaryExpr(tl *Tokenlist) (EvalFunc, error) {
 	return ef, nil
 }
 
-// [21] ValueExpr ::= PathExpr
-func parseValueExpr(tl *Tokenlist) (EvalFunc, error) {
-	enterStep(tl, "21 parseValueExpr")
-	var ef EvalFunc
+// [21] SimpleMapExpr ::= PathExpr ("!" PathExpr)*
+func parseSimpleMapExpr(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "21 parseSimpleMapExpr")
+	var efs []EvalFunc
 	ef, err := parsePathExpr(tl)
 	if err != nil {
-		leaveStep(tl, "21 parseValueExpr (err)")
+		leaveStep(tl, "21 parseSimpleMapExpr")
 		return nil, err
 	}
-
-	leaveStep(tl, "21 parseValueExpr")
-	return ef, nil
+	if ef == nil {
+		leaveStep(tl, "21 parseSimpleMapExpr (nil)")
+		return nil, nil
+	}
+	efs = append(efs, ef)
+	for {
+		if _, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"!"}, tokOperator); !ok {
+			break
+		}
+		ef2, err := parsePathExpr(tl)
+		if err != nil {
+			leaveStep(tl, "21 parseSimpleMapExpr")
+			return nil, err
+		}
+		if ef2 == nil {
+			return nil, fmt.Errorf("expected expression after '!'")
+		}
+		efs = append(efs, ef2)
+	}
+	if len(efs) == 1 {
+		leaveStep(tl, "21 parseSimpleMapExpr")
+		return efs[0], nil
+	}
+	mapEf := func(ctx *Context) (Sequence, error) {
+		result, err := efs[0](ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, stepEf := range efs[1:] {
+			var newResult Sequence
+			saveSeq := ctx.SetContextSequence(result)
+			savePos := ctx.Pos
+			saveSize := ctx.Size()
+			ctx.SetSize(len(result))
+			for pos, item := range result {
+				ctx.Pos = pos
+				ctx.SetContextSequence(Sequence{item})
+				seq, err := stepEf(ctx)
+				if err != nil {
+					ctx.SetContextSequence(saveSeq)
+					ctx.Pos = savePos
+					ctx.SetSize(saveSize)
+					return nil, err
+				}
+				newResult = append(newResult, seq...)
+			}
+			ctx.SetContextSequence(saveSeq)
+			ctx.Pos = savePos
+			ctx.SetSize(saveSize)
+			result = newResult
+		}
+		return result, nil
+	}
+	leaveStep(tl, "21 parseSimpleMapExpr")
+	return mapEf, nil
 }
 
 // [25] PathExpr ::= ("/" RelativePathExpr?) | ("//" RelativePathExpr) | RelativePathExpr
@@ -2042,7 +3065,7 @@ func parsePathExpr(tl *Tokenlist) (EvalFunc, error) {
 				if op == "/" {
 					return Sequence{ctx.Document()}, nil
 				}
-				return nil, nil
+				return nil, fmt.Errorf("unexpected end of path expression after '//'")
 			}
 			seq, err := rpe(ctx)
 			if err != nil {
@@ -2093,6 +3116,12 @@ func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 		if err != nil {
 			leaveStep(tl, "26 parseRelativePathExpr (err)")
 			return nil, err
+		}
+		if ef == nil {
+			if len(efs) == 0 {
+				return nil, nil
+			}
+			break
 		}
 		efs = append(efs, ef)
 		if op, ok := tl.readNexttokIfIsOneOfValueAndType([]string{"/", "//"}, tokOperator); ok {
@@ -2497,8 +3526,9 @@ func parseFilterExpr(tl *Tokenlist) (EvalFunc, error) {
 		leaveStep(tl, "38 parseFilterExpr (err)")
 		return nil, err
 	}
-	predicates := []EvalFunc{}
 
+	// PostfixExpr ::= PrimaryExpr (Predicate | Lookup)*
+	modified := false
 	for {
 		if tl.nexttokIsTyp(tokOpenBracket) {
 			tl.read()
@@ -2506,37 +3536,207 @@ func parseFilterExpr(tl *Tokenlist) (EvalFunc, error) {
 			if err != nil {
 				return nil, err
 			}
-			predicates = append(predicates, predicate)
-			err = tl.skipType(tokCloseBracket)
+			if err = tl.skipType(tokCloseBracket); err != nil {
+				return nil, err
+			}
+			baseEf := ef
+			ef = func(ctx *Context) (Sequence, error) {
+				ctx.sequence, err = baseEf(ctx)
+				if err != nil {
+					return nil, err
+				}
+				_, err = ctx.Filter(predicate)
+				if err != nil {
+					return nil, err
+				}
+				ctx.ctxPositions = nil
+				ctx.ctxLengths = nil
+				return ctx.sequence, nil
+			}
+			modified = true
+		} else if tl.nexttokIsValue("?") {
+			tl.read() // consume ?
+			lookupEf, err := parseLookupKeySpecifier(tl)
 			if err != nil {
 				return nil, err
 			}
+			baseEf := ef
+			ef = func(ctx *Context) (Sequence, error) {
+				base, err := baseEf(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return evalLookup(ctx, base, lookupEf)
+			}
+			modified = true
+		} else if tl.nexttokIsTyp(tokOpenParen) {
+			// Dynamic function call: expr(args)
+			tl.read() // consume (
+			var argEfs []EvalFunc
+			if !tl.nexttokIsTyp(tokCloseParen) {
+				for {
+					argEf, err := parseExprSingle(tl)
+					if err != nil {
+						return nil, err
+					}
+					argEfs = append(argEfs, argEf)
+					if !tl.nexttokIsTyp(tokComma) {
+						break
+					}
+					tl.read() // consume comma
+				}
+			}
+			if err := tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			baseEf := ef
+			capturedArgEfs := argEfs
+			ef = func(ctx *Context) (Sequence, error) {
+				base, err := baseEf(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if len(base) != 1 {
+					return nil, NewXPathError("XPTY0004", "dynamic function call requires single function item")
+				}
+				fn, ok := base[0].(*XPathFunction)
+				if !ok {
+					// Could be a map or array lookup
+					if m, ok := base[0].(*XPathMap); ok && len(capturedArgEfs) == 1 {
+						keySeq, err := capturedArgEfs[0](ctx)
+						if err != nil {
+							return nil, err
+						}
+						if len(keySeq) > 0 {
+							val, _ := m.Get(keySeq[0])
+							return val, nil
+						}
+						return Sequence{}, nil
+					}
+					if arr, ok := base[0].(*XPathArray); ok && len(capturedArgEfs) == 1 {
+						idxSeq, err := capturedArgEfs[0](ctx)
+						if err != nil {
+							return nil, err
+						}
+						idx, err := NumberValue(idxSeq)
+						if err != nil {
+							return nil, err
+						}
+						return arr.Get(int(idx))
+					}
+					return nil, NewXPathError("XPTY0004", fmt.Sprintf("cannot call %T as function", base[0]))
+				}
+				args := make([]Sequence, len(capturedArgEfs))
+				for i, argEf := range capturedArgEfs {
+					args[i], err = argEf(ctx)
+					if err != nil {
+						return nil, err
+					}
+				}
+				return fn.Call(ctx, args)
+			}
+			modified = true
 		} else {
 			break
 		}
 	}
-	if len(predicates) == 0 {
-		leaveStep(tl, "29 parseForwardStep (#p == 0)")
-		return ef, nil
+	_ = modified
+	leaveStep(tl, "38 parseFilterExpr")
+	return ef, nil
+}
+
+// parseLookupKeySpecifier parses: KeySpecifier ::= NCName | IntegerLiteral | ParenthesizedExpr | "*"
+// Returns an EvalFunc that produces the key(s) to look up, or nil for wildcard (*).
+type lookupSpec struct {
+	wildcard bool
+	ef       EvalFunc
+}
+
+func parseLookupKeySpecifier(tl *Tokenlist) (*lookupSpec, error) {
+	// Wildcard: ?*
+	if tl.nexttokIsValue("*") {
+		tl.read()
+		return &lookupSpec{wildcard: true}, nil
 	}
-	ff := func(ctx *Context) (Sequence, error) {
-		var err error
-		ctx.sequence, err = ef(ctx)
+	// ParenthesizedExpr: ?(expr)
+	if tl.nexttokIsTyp(tokOpenParen) {
+		tl.read()
+		ef, err := parseExpr(tl)
 		if err != nil {
 			return nil, err
 		}
-		for _, predicate := range predicates {
-			_, err = ctx.Filter(predicate)
-			if err != nil {
-				return nil, err
-			}
+		if err := tl.skipType(tokCloseParen); err != nil {
+			return nil, fmt.Errorf("')' expected in lookup expression")
 		}
-		ctx.ctxPositions = nil
-		ctx.ctxLengths = nil
-		return ctx.sequence, nil
+		return &lookupSpec{ef: ef}, nil
 	}
-	leaveStep(tl, "38 parseFilterExpr")
-	return ff, nil
+	// IntegerLiteral
+	if tl.nexttokIsTyp(tokNumber) {
+		tok, _ := tl.read()
+		numVal := tok.Value
+		return &lookupSpec{ef: func(ctx *Context) (Sequence, error) {
+			return Sequence{numVal}, nil
+		}}, nil
+	}
+	// NCName
+	if tl.nexttokIsTyp(tokQName) {
+		tok, _ := tl.read()
+		name := tok.Value.(string)
+		return &lookupSpec{ef: func(ctx *Context) (Sequence, error) {
+			return Sequence{name}, nil
+		}}, nil
+	}
+	return nil, fmt.Errorf("expected key specifier after '?'")
+}
+
+// evalLookup applies a lookup operation to each item in the base sequence.
+func evalLookup(ctx *Context, base Sequence, spec *lookupSpec) (Sequence, error) {
+	var result Sequence
+	for _, item := range base {
+		switch v := item.(type) {
+		case *XPathMap:
+			if spec.wildcard {
+				for _, entry := range v.Entries {
+					result = append(result, entry.Value...)
+				}
+			} else {
+				keys, err := spec.ef(ctx)
+				if err != nil {
+					return nil, err
+				}
+				for _, key := range keys {
+					if val, ok := v.Get(key); ok {
+						result = append(result, val...)
+					}
+				}
+			}
+		case *XPathArray:
+			if spec.wildcard {
+				for _, member := range v.Members {
+					result = append(result, member...)
+				}
+			} else {
+				keys, err := spec.ef(ctx)
+				if err != nil {
+					return nil, err
+				}
+				for _, key := range keys {
+					idx, err := NumberValue(Sequence{key})
+					if err != nil {
+						return nil, err
+					}
+					member, err := v.Get(int(idx))
+					if err != nil {
+						return nil, err
+					}
+					result = append(result, member...)
+				}
+			}
+		default:
+			return nil, NewXPathError("XPTY0004", fmt.Sprintf("lookup operator requires a map or array, got %T", item))
+		}
+	}
+	return result, nil
 }
 
 // [41] PrimaryExpr ::= Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall
@@ -2561,8 +3761,9 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	// NumericLiteral
 	if nexttok.Typ == tokNumber {
+		numVal := nexttok.Value // int, XSDecimal, or XSDouble
 		ef = func(ctx *Context) (Sequence, error) {
-			return Sequence{nexttok.Value.(float64)}, nil
+			return Sequence{numVal}, nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
 		return ef, nil
@@ -2578,38 +3779,62 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
-	// VarRef — possibly followed by "(" for map/array/function-item lookup
+	// VarRef — possibly followed by "(" for map/array/function-item call
 	if nexttok.Typ == tokVarname {
 		varname := nexttok.Value.(string)
 		if tl.nexttokIsTyp(tokOpenParen) {
-			// $var(key) — dynamic function call / map lookup
+			// $var(args) — dynamic function call / map lookup / array lookup
 			tl.read() // consume (
-			argEf, err := parseExprSingle(tl)
-			if err != nil {
-				return nil, err
+			var argEfs []EvalFunc
+			if !tl.nexttokIsTyp(tokCloseParen) {
+				for {
+					aef, err := parseExprSingle(tl)
+					if err != nil {
+						return nil, err
+					}
+					argEfs = append(argEfs, aef)
+					if !tl.nexttokIsTyp(tokComma) {
+						break
+					}
+					tl.read() // consume comma
+				}
 			}
 			if err = tl.skipType(tokCloseParen); err != nil {
 				return nil, fmt.Errorf("close paren expected after $%s(...)", varname)
 			}
 			ef = func(ctx *Context) (Sequence, error) {
 				varVal := ctx.vars[varname]
-				keySeq, err := argEf(ctx)
-				if err != nil {
-					return nil, err
+				// Evaluate arguments
+				args := make([]Sequence, len(argEfs))
+				for i, aef := range argEfs {
+					seq, err := aef(ctx)
+					if err != nil {
+						return nil, err
+					}
+					args[i] = seq
 				}
 				if len(varVal) == 1 {
-					if m, ok := varVal[0].(*XPathMap); ok {
-						var key Item
-						if len(keySeq) > 0 {
-							key = keySeq[0]
+					switch v := varVal[0].(type) {
+					case *XPathMap:
+						if len(args) == 1 && len(args[0]) > 0 {
+							val, _ := v.Get(args[0][0])
+							return val, nil
 						}
-						val, _ := m.Get(key)
-						return val, nil
+					case *XPathArray:
+						if len(args) == 1 {
+							idx, err := NumberValue(args[0])
+							if err != nil {
+								return nil, err
+							}
+							return v.Get(int(idx))
+						}
+					case *XPathFunction:
+						return v.Call(ctx, args)
 					}
 				}
-				return nil, fmt.Errorf("$%s is not a map (cannot use function-item call syntax)", varname)
+				return nil, fmt.Errorf("$%s is not a callable function, map, or array", varname)
 			}
-			leaveStep(tl, "41 parsePrimaryExpr (var-lookup)")
+			leaveStep(tl, "41 parsePrimaryExpr (var-call)")
 			return ef, nil
 		}
 		ef = func(ctx *Context) (Sequence, error) {
@@ -2619,12 +3844,122 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
+	// Unary Lookup: ?key (operates on context item)
+	if nexttok.Typ == tokOperator && nexttok.Value.(string) == "?" {
+		spec, err := parseLookupKeySpecifier(tl)
+		if err != nil {
+			return nil, err
+		}
+		ef = func(ctx *Context) (Sequence, error) {
+			return evalLookup(ctx, ctx.sequence, spec)
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (unary-lookup)")
+		return ef, nil
+	}
+
 	// Context item
 	if nexttok.Typ == tokOperator && nexttok.Value.(string) == "." {
 		ef = func(ctx *Context) (Sequence, error) {
 			return ctx.sequence, nil
 		}
 		leaveStep(tl, "41 parsePrimaryExpr")
+		return ef, nil
+	}
+
+	// InlineFunctionExpr: function($x, $y) { expr }
+	if nexttok.Typ == tokQName && nexttok.Value.(string) == "function" && tl.nexttokIsTyp(tokOpenParen) {
+		tl.read() // consume (
+		var paramNames []string
+		if !tl.nexttokIsTyp(tokCloseParen) {
+			for {
+				pTok, err := tl.read()
+				if err != nil || pTok.Typ != tokVarname {
+					return nil, fmt.Errorf("expected parameter name in inline function")
+				}
+				paramNames = append(paramNames, pTok.Value.(string))
+				// Skip optional "as SequenceType"
+				if tl.nexttokIsValue("as") {
+					tl.read() // consume "as"
+					// Skip type tokens until we see , or )
+					for {
+						if tl.nexttokIsTyp(tokComma) || tl.nexttokIsTyp(tokCloseParen) {
+							break
+						}
+						if _, err := tl.read(); err != nil {
+							return nil, err
+						}
+					}
+				}
+				if !tl.nexttokIsTyp(tokComma) {
+					break
+				}
+				tl.read() // consume comma
+			}
+		}
+		if err := tl.skipType(tokCloseParen); err != nil {
+			return nil, fmt.Errorf("')' expected in inline function parameter list")
+		}
+		// Skip optional "as SequenceType"
+		if tl.nexttokIsValue("as") {
+			tl.read() // consume "as"
+			for {
+				if tl.nexttokIsTyp(tokOpenBrace) {
+					break
+				}
+				if _, err := tl.read(); err != nil {
+					return nil, err
+				}
+			}
+		}
+		// Parse function body: { Expr }
+		if err := tl.skipType(tokOpenBrace); err != nil {
+			return nil, fmt.Errorf("'{' expected in inline function body")
+		}
+		bodyEf, err := parseExpr(tl)
+		if err != nil {
+			return nil, err
+		}
+		if err := tl.skipType(tokCloseBrace); err != nil {
+			return nil, fmt.Errorf("'}' expected in inline function body")
+		}
+		capturedParams := paramNames
+		ef = func(ctx *Context) (Sequence, error) {
+			// Capture current variable scope for closure
+			closureVars := make(map[string]Sequence, len(ctx.vars))
+			for k, v := range ctx.vars {
+				closureVars[k] = v
+			}
+			fnRef := &XPathFunction{
+				Name:  "(anonymous)",
+				Arity: len(capturedParams),
+				Fn: func(callCtx *Context, args []Sequence) (Sequence, error) {
+					// Save current vars
+					savedVars := make(map[string]Sequence, len(callCtx.vars))
+					for k, v := range callCtx.vars {
+						savedVars[k] = v
+					}
+					// Apply closure vars
+					for k, v := range closureVars {
+						callCtx.vars[k] = v
+					}
+					// Bind parameters
+					for i, name := range capturedParams {
+						if i < len(args) {
+							callCtx.vars[name] = args[i]
+						}
+					}
+					result, err := bodyEf(callCtx)
+					// Restore vars
+					clear(callCtx.vars)
+					for k, v := range savedVars {
+						callCtx.vars[k] = v
+					}
+					return result, err
+				},
+			}
+			return Sequence{fnRef}, nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (inline-func)")
 		return ef, nil
 	}
 
@@ -2640,6 +3975,17 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
+	// Square array constructor: [ expr, expr, ... ]
+	if nexttok.Typ == tokOpenBracket {
+		ef, err = parseSquareArrayConstructor(tl)
+		if err != nil {
+			leaveStep(tl, "41 parsePrimaryExpr (err square-array)")
+			return nil, err
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (square-array)")
+		return ef, nil
+	}
+
 	// Array constructor: array { expr, expr, ... }
 	if nexttok.Typ == tokQName && nexttok.Value.(string) == "array" && tl.nexttokIsTyp(tokOpenBrace) {
 		tl.read() // consume {
@@ -2652,12 +3998,66 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		return ef, nil
 	}
 
-	// FunctionCall
+	// NamedFunctionRef: EQName "#" IntegerLiteral
+	if (nexttok.Typ == tokQName || nexttok.Typ == tokEQName) && tl.nexttokIsValue("#") {
+		fnFullName := nexttok.Value.(string)
+		tl.read() // consume #
+		arityTok, err := tl.read()
+		if err != nil {
+			return nil, fmt.Errorf("expected arity after '#' in function reference")
+		}
+		arityF, _ := ToFloat64(arityTok.Value)
+		arity := int(arityF)
+		var capturedNS, capturedLocal, capturedPrefix string
+		if nexttok.Typ == tokEQName {
+			// URIQualifiedName: "namespace}localname"
+			if idx := strings.Index(fnFullName, "}"); idx >= 0 {
+				capturedNS = fnFullName[:idx]
+				capturedLocal = fnFullName[idx+1:]
+			}
+		} else {
+			capturedLocal = fnFullName
+			if idx := strings.Index(fnFullName, ":"); idx >= 0 {
+				capturedPrefix = fnFullName[:idx]
+				capturedLocal = fnFullName[idx+1:]
+			}
+		}
+		capturedArity := arity
+		ef = func(ctx *Context) (Sequence, error) {
+			ns := capturedNS
+			if ns == "" {
+				ns = nsFN
+				if capturedPrefix != "" {
+					var ok bool
+					if ns, ok = ctx.Namespaces[capturedPrefix]; !ok {
+						return nil, fmt.Errorf("could not find namespace for prefix %q", capturedPrefix)
+					}
+				}
+			}
+			fn := getfunction(ns, capturedLocal)
+			if fn == nil {
+				return nil, NewXPathError("XPST0017", fmt.Sprintf("unknown function %s#%d", capturedLocal, capturedArity))
+			}
+			return Sequence{&XPathFunction{
+				Name:             capturedLocal,
+				Namespace:        ns,
+				Arity:            capturedArity,
+				Fn:               fn.F,
+				DynamicCallError: fn.DynamicCallError,
+			}}, nil
+		}
+		leaveStep(tl, "41 parsePrimaryExpr (named-func-ref)")
+		return ef, nil
+	}
+
+	// FunctionCall (QName or EQName followed by "(")
 	if tl.nexttokIsTyp(tokOpenParen) {
 		tl.unread() // function name
-		fname := nexttok.String()
-		if fname == "text" || fname == "element" || fname == "attribute" || fname == "node" || fname == "comment" || fname == "processing-instruction" {
-			return nil, nil
+		if nexttok.Typ == tokQName {
+			fname := nexttok.String()
+			if fname == "text" || fname == "element" || fname == "attribute" || fname == "node" || fname == "comment" || fname == "processing-instruction" {
+				return nil, nil
+			}
 		}
 		ef, err := parseFunctionCall(tl)
 		if err != nil {
@@ -2685,7 +4085,11 @@ func parseParenthesizedExpr(tl *Tokenlist) (EvalFunc, error) {
 		return nil, err
 	}
 	if exp == nil {
-		return nil, nil
+		// Empty parenthesized expression () = empty sequence
+		leaveStep(tl, "46 parseParenthesizedExpr (empty)")
+		return func(ctx *Context) (Sequence, error) {
+			return Sequence{}, nil
+		}, nil
 	}
 	ef = func(ctx *Context) (Sequence, error) {
 		seq, err := exp(ctx)
@@ -2712,20 +4116,42 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	if err = tl.skipType(tokOpenParen); err != nil {
 		return nil, err
 	}
-	fn := functionNameToken.Value.(string)
+	fnName, ok := functionNameToken.Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected function name, got %v", functionNameToken.Value)
+	}
+	fn := fnName
 	// Pre-split function name to avoid splitting on every call.
 	var fnPrefix, fnLocalName string
-	if idx := strings.IndexByte(fn, ':'); idx >= 0 {
+	var fnDirectNS string // set for EQName (Q{ns}local)
+	if functionNameToken.Typ == tokEQName {
+		if idx := strings.Index(fn, "}"); idx >= 0 {
+			fnDirectNS = fn[:idx]
+			fnLocalName = fn[idx+1:]
+		}
+	} else if idx := strings.IndexByte(fn, ':'); idx >= 0 {
 		fnPrefix = fn[:idx]
 		fnLocalName = fn[idx+1:]
 	} else {
 		fnLocalName = fn
 	}
 
+	// callFn resolves the function by direct namespace or prefix
+	callFn := func(ctx *Context, arguments []Sequence) (Sequence, error) {
+		if fnDirectNS != "" {
+			fnObj := getfunction(fnDirectNS, fnLocalName)
+			if fnObj == nil {
+				return nil, fmt.Errorf("Could not find function %q in namespace %q", fnLocalName, fnDirectNS)
+			}
+			return fnObj.F(ctx, arguments)
+		}
+		return callFunctionResolved(fnPrefix, fnLocalName, arguments, ctx)
+	}
+
 	if tl.nexttokIsTyp(tokCloseParen) {
 		tl.read()
 		ef = func(ctx *Context) (Sequence, error) {
-			return callFunctionResolved(fnPrefix, fnLocalName, []Sequence{}, ctx)
+			return callFn(ctx, []Sequence{})
 		}
 		leaveStep(tl, "48 parseFunctionCall (a)")
 		return ef, nil
@@ -2763,7 +4189,7 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 			ctx.SetContextSequence(saveContext)
 		}
 
-		return callFunctionResolved(fnPrefix, fnLocalName, arguments, ctx)
+		return callFn(ctx, arguments)
 	}
 
 	leaveStep(tl, "48 parseFunctionCall")
@@ -2803,8 +4229,265 @@ func parseItemType(tl *Tokenlist) (testFunc, error) {
 		}
 	}
 
+	// item() — matches any item
+	if tl.readIfTokenFollow([]token{{"item", tokQName}, {'(', tokOpenParen}, {')', tokCloseParen}}) {
+		tf = func(ctx *Context, itm Item) bool {
+			return true
+		}
+		leaveStep(tl, "52 parseItemType (item)")
+		return tf, nil
+	}
+
+	// map(*) / array(*)
+	if tl.readIfTokenFollow([]token{{"map", tokQName}, {'(', tokOpenParen}, {"*", tokOperator}, {')', tokCloseParen}}) {
+		tf = func(ctx *Context, itm Item) bool {
+			_, ok := itm.(*XPathMap)
+			return ok
+		}
+		leaveStep(tl, "52 parseItemType (map)")
+		return tf, nil
+	}
+	if tl.readIfTokenFollow([]token{{"array", tokQName}, {'(', tokOpenParen}, {"*", tokOperator}, {')', tokCloseParen}}) {
+		tf = func(ctx *Context, itm Item) bool {
+			_, ok := itm.(*XPathArray)
+			return ok
+		}
+		leaveStep(tl, "52 parseItemType (array)")
+		return tf, nil
+	}
+
+	// function(*) — matches any function
+	if tl.readIfTokenFollow([]token{{"function", tokQName}, {'(', tokOpenParen}, {"*", tokOperator}, {')', tokCloseParen}}) {
+		tf = func(ctx *Context, itm Item) bool {
+			_, ok := itm.(*XPathFunction)
+			return ok
+		}
+		leaveStep(tl, "52 parseItemType (function)")
+		return tf, nil
+	}
+
+	// AtomicType: xs:integer, xs:string, xs:double, xs:float, xs:decimal, xs:boolean, etc.
+	nexttok, err := tl.peek()
+	if err == nil && nexttok.Typ == tokQName {
+		name, ok := nexttok.Value.(string)
+		if ok {
+			atomicType := resolveAtomicType(name)
+			if atomicType != "" {
+				tl.read() // consume the type name
+				tf = makeAtomicTypeTest(atomicType)
+				leaveStep(tl, "52 parseItemType (atomic)")
+				return tf, nil
+			}
+		}
+	}
+
 	leaveStep(tl, "52 parseItemType")
 	return tf, nil
+}
+
+// resolveAtomicType maps XPath type names to canonical type identifiers.
+func resolveAtomicType(name string) string {
+	// Handle prefixed and unprefixed forms
+	switch name {
+	case "xs:integer":
+		return "integer"
+	case "xs:int":
+		return "int"
+	case "xs:long":
+		return "long"
+	case "xs:short":
+		return "short"
+	case "xs:byte":
+		return "byte"
+	case "xs:unsignedLong":
+		return "unsignedLong"
+	case "xs:unsignedInt":
+		return "unsignedInt"
+	case "xs:unsignedShort":
+		return "unsignedShort"
+	case "xs:unsignedByte":
+		return "unsignedByte"
+	case "xs:nonPositiveInteger":
+		return "nonPositiveInteger"
+	case "xs:nonNegativeInteger":
+		return "nonNegativeInteger"
+	case "xs:negativeInteger":
+		return "negativeInteger"
+	case "xs:positiveInteger":
+		return "positiveInteger"
+	case "xs:double":
+		return "double"
+	case "xs:float":
+		return "float"
+	case "xs:decimal":
+		return "decimal"
+	case "xs:string":
+		return "string"
+	case "xs:normalizedString":
+		return "normalizedString"
+	case "xs:token":
+		return "token"
+	case "xs:language":
+		return "language"
+	case "xs:NMTOKEN":
+		return "NMTOKEN"
+	case "xs:Name":
+		return "Name"
+	case "xs:NCName":
+		return "NCName"
+	case "xs:ID":
+		return "ID"
+	case "xs:IDREF":
+		return "IDREF"
+	case "xs:ENTITY":
+		return "ENTITY"
+	case "xs:anyURI":
+		return "anyURI"
+	case "xs:untypedAtomic":
+		return "untypedAtomic"
+	case "xs:hexBinary":
+		return "hexBinary"
+	case "xs:base64Binary":
+		return "base64Binary"
+	case "xs:boolean":
+		return "boolean"
+	case "xs:dateTime":
+		return "dateTime"
+	case "xs:date":
+		return "date"
+	case "xs:time":
+		return "time"
+	case "xs:duration", "xs:dayTimeDuration", "xs:yearMonthDuration":
+		return "duration"
+	case "xs:gYear":
+		return "gYear"
+	case "xs:gMonth":
+		return "gMonth"
+	case "xs:gDay":
+		return "gDay"
+	case "xs:gYearMonth":
+		return "gYearMonth"
+	case "xs:gMonthDay":
+		return "gMonthDay"
+	case "xs:QName":
+		return "qname"
+	case "xs:numeric":
+		return "numeric"
+	}
+	return ""
+}
+
+// makeAtomicTypeTest creates a testFunc for an atomic type check.
+func makeAtomicTypeTest(atomicType string) testFunc {
+	// Map atomicType name to IntSubtype for integer hierarchy checks
+	intSubtypeByName := map[string]IntSubtype{
+		"integer": IntInteger, "long": IntLong, "int": IntInt,
+		"short": IntShort, "byte": IntByte,
+		"nonNegativeInteger": IntNonNegativeInteger, "unsignedLong": IntUnsignedLong,
+		"unsignedInt": IntUnsignedInt, "unsignedShort": IntUnsignedShort,
+		"unsignedByte": IntUnsignedByte, "positiveInteger": IntPositiveInteger,
+		"nonPositiveInteger": IntNonPositiveInteger, "negativeInteger": IntNegativeInteger,
+	}
+	strSubtypeByName := map[string]StrSubtype{
+		"string": StrString, "normalizedString": StrNormalizedString,
+		"token": StrToken, "language": StrLanguage, "NMTOKEN": StrNMTOKEN,
+		"Name": StrName, "NCName": StrNCName, "ID": StrID,
+		"IDREF": StrIDREF, "ENTITY": StrENTITY,
+	}
+
+	return func(ctx *Context, itm Item) bool {
+		// Integer subtype hierarchy check
+		if targetInt, ok := intSubtypeByName[atomicType]; ok {
+			if v, ok := itm.(XSInteger); ok {
+				return IntIsSubtypeOf(v.Subtype, targetInt)
+			}
+			// Bare int (from tokenizer) is xs:integer
+			if _, ok := itm.(int); ok {
+				return targetInt == IntInteger
+			}
+			return false
+		}
+
+		// String subtype hierarchy check
+		if targetStr, ok := strSubtypeByName[atomicType]; ok {
+			if v, ok := itm.(XSString); ok {
+				return StrIsSubtypeOf(v.Subtype, targetStr)
+			}
+			// Bare string (from tokenizer/literals) is xs:string
+			if _, ok := itm.(string); ok {
+				return targetStr == StrString
+			}
+			return false
+		}
+
+		switch atomicType {
+		case "double":
+			switch itm.(type) {
+			case XSDouble, float64:
+				return true
+			}
+			return false
+		case "float":
+			_, ok := itm.(XSFloat)
+			return ok
+		case "decimal":
+			// xs:decimal: XSDecimal, int, or XSInteger (integer is subtype of decimal)
+			switch itm.(type) {
+			case XSDecimal, int, XSInteger:
+				return true
+			}
+			return false
+		case "anyURI":
+			_, ok := itm.(XSAnyURI)
+			return ok
+		case "untypedAtomic":
+			_, ok := itm.(XSUntypedAtomic)
+			return ok
+		case "hexBinary":
+			_, ok := itm.(XSHexBinary)
+			return ok
+		case "base64Binary":
+			_, ok := itm.(XSBase64Binary)
+			return ok
+		case "boolean":
+			_, ok := itm.(bool)
+			return ok
+		case "numeric":
+			_, ok := ToFloat64(itm)
+			return ok
+		case "qname":
+			_, ok := itm.(XSQName)
+			return ok
+		case "dateTime":
+			_, ok := itm.(XSDateTime)
+			return ok
+		case "date":
+			_, ok := itm.(XSDate)
+			return ok
+		case "time":
+			_, ok := itm.(XSTime)
+			return ok
+		case "duration":
+			_, ok := itm.(XSDuration)
+			return ok
+		case "gYear":
+			_, ok := itm.(XSGYear)
+			return ok
+		case "gMonth":
+			_, ok := itm.(XSGMonth)
+			return ok
+		case "gDay":
+			_, ok := itm.(XSGDay)
+			return ok
+		case "gYearMonth":
+			_, ok := itm.(XSGYearMonth)
+			return ok
+		case "gMonthDay":
+			_, ok := itm.(XSGMonthDay)
+			return ok
+		}
+		return false
+	}
 }
 
 // [51] OccurrenceIndicator ::= "?" | "*" | "+"
@@ -3045,6 +4728,55 @@ func parseMapConstructor(tl *Tokenlist) (EvalFunc, error) {
 // parseArrayConstructor parses a curly array constructor: array { Expr? }.
 // The opening { has already been consumed.
 // Per XPath 3.1: each item in the evaluated sequence becomes a separate member.
+// parseSquareArrayConstructor parses: "[" (ExprSingle ("," ExprSingle)*)? "]"
+// Each expression becomes one member of the array (its value is the full sequence).
+func parseSquareArrayConstructor(tl *Tokenlist) (EvalFunc, error) {
+	enterStep(tl, "parseSquareArrayConstructor")
+
+	// Empty array: []
+	if tl.nexttokIsTyp(tokCloseBracket) {
+		tl.read() // consume ]
+		ef := func(ctx *Context) (Sequence, error) {
+			return Sequence{&XPathArray{}}, nil
+		}
+		leaveStep(tl, "parseSquareArrayConstructor (empty)")
+		return ef, nil
+	}
+
+	var memberEfs []EvalFunc
+	for {
+		mef, err := parseExprSingle(tl)
+		if err != nil {
+			leaveStep(tl, "parseSquareArrayConstructor (err)")
+			return nil, err
+		}
+		memberEfs = append(memberEfs, mef)
+		if !tl.nexttokIsTyp(tokComma) {
+			break
+		}
+		tl.read() // consume comma
+	}
+
+	if err := tl.skipType(tokCloseBracket); err != nil {
+		leaveStep(tl, "parseSquareArrayConstructor (err close)")
+		return nil, fmt.Errorf("']' expected in square array constructor")
+	}
+
+	ef := func(ctx *Context) (Sequence, error) {
+		arr := &XPathArray{Members: make([]Sequence, len(memberEfs))}
+		for i, mef := range memberEfs {
+			seq, err := mef(ctx)
+			if err != nil {
+				return nil, err
+			}
+			arr.Members[i] = seq
+		}
+		return Sequence{arr}, nil
+	}
+	leaveStep(tl, "parseSquareArrayConstructor")
+	return ef, nil
+}
+
 func parseArrayConstructor(tl *Tokenlist) (EvalFunc, error) {
 	enterStep(tl, "parseArrayConstructor")
 
@@ -3112,6 +4844,9 @@ func (xp *Parser) SetVariable(name string, value Sequence) {
 // Parsed expressions are cached so that repeated evaluation of the same XPath
 // string avoids re-tokenizing and re-parsing.
 func (xp *Parser) Evaluate(xpath string) (Sequence, error) {
+	// Reset per-evaluation state (XPath spec: current-dateTime is stable within one evaluation)
+	xp.Ctx.currentTime = nil
+
 	if cached, ok := exprCache.Load(xpath); ok {
 		return cached.(EvalFunc)(xp.Ctx)
 	}

@@ -263,15 +263,23 @@ func (tl *Tokenlist) skipNCName(name string) error {
 	return nil
 }
 
-func getNum(sr *strings.Reader) float64 {
+// getNum reads a numeric literal and returns the appropriately typed value:
+// - IntegerLiteral (digits only) → int
+// - DecimalLiteral (digits with '.') → XSDecimal
+// - DoubleLiteral (has 'e'/'E') → XSDouble
+func getNum(sr *strings.Reader) interface{} {
 	var buf []byte
 	hasExp := false
+	hasDot := false
 	for {
 		r, _, err := sr.ReadRune()
 		if err != nil {
 			break
 		}
-		if r >= '0' && r <= '9' || r == '.' {
+		if r >= '0' && r <= '9' {
+			buf = append(buf, byte(r))
+		} else if r == '.' {
+			hasDot = true
 			buf = append(buf, byte(r))
 		} else if (r == 'e' || r == 'E') && !hasExp {
 			buf = append(buf, byte(r))
@@ -283,8 +291,61 @@ func getNum(sr *strings.Reader) float64 {
 			break
 		}
 	}
-	f, _ := strconv.ParseFloat(string(buf), 64)
-	return f
+	s := string(buf)
+	f, _ := strconv.ParseFloat(s, 64)
+
+	if hasExp {
+		return XSDouble(f)
+	}
+	if hasDot {
+		return XSDecimal(f)
+	}
+	// Integer literal — parse as int64 to preserve precision
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return int(i)
+	}
+	// Overflow — store as XSDecimal to preserve the value as best as possible
+	return XSDecimal(f)
+}
+
+// getNumWithPrefix parses a number literal starting with a given prefix (e.g., ".").
+func getNumWithPrefix(prefix string, sr *strings.Reader) interface{} {
+	var buf []byte
+	buf = append(buf, []byte(prefix)...)
+	hasExp := false
+	hasDot := strings.Contains(prefix, ".")
+	for {
+		r, _, err := sr.ReadRune()
+		if err != nil {
+			break
+		}
+		if r >= '0' && r <= '9' {
+			buf = append(buf, byte(r))
+		} else if r == '.' && !hasDot {
+			hasDot = true
+			buf = append(buf, byte(r))
+		} else if (r == 'e' || r == 'E') && !hasExp {
+			buf = append(buf, byte(r))
+			hasExp = true
+		} else if (r == '+' || r == '-') && hasExp && len(buf) > 0 && (buf[len(buf)-1] == 'e' || buf[len(buf)-1] == 'E') {
+			buf = append(buf, byte(r))
+		} else {
+			sr.UnreadRune()
+			break
+		}
+	}
+	s := string(buf)
+	f, _ := strconv.ParseFloat(s, 64)
+	if hasExp {
+		return XSDouble(f)
+	}
+	if hasDot {
+		return XSDecimal(f)
+	}
+	if i, err := strconv.Atoi(s); err == nil {
+		return i
+	}
+	return int(f)
 }
 
 // getQName reads until any non QName rune is found.
@@ -356,6 +417,15 @@ func getDelimitedString(sr *strings.Reader) (string, error) {
 			return "", err
 		}
 		if r == delim {
+			// XPath escaped delimiter: "" → " or '' → '
+			next, _, err := sr.ReadRune()
+			if err == nil && next == delim {
+				str = append(str, delim)
+				continue
+			}
+			if err == nil {
+				sr.UnreadRune()
+			}
 			break
 		} else {
 			str = append(str, r)
@@ -431,17 +501,32 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 				return nil, err
 			}
 			if '0' <= nextRune && nextRune <= '9' {
+				// Put back the digit, then parse number starting with "."
 				sr.UnreadRune()
-				sr.UnreadRune()
-				tokens = append(tokens, token{getNum(sr), tokNumber})
+				tokens = append(tokens, token{getNumWithPrefix(".", sr), tokNumber})
 			} else if nextRune == '.' {
 				tokens = append(tokens, token{"..", tokOperator})
 			} else {
 				sr.UnreadRune()
 				tokens = append(tokens, token{".", tokOperator})
 			}
-		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '=' {
+		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '#' {
 			tokens = append(tokens, token{string(r), tokOperator})
+		} else if r == '=' {
+			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{"=", tokOperator})
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if nextRune == '>' {
+				tokens = append(tokens, token{"=>", tokOperator})
+			} else {
+				tokens = append(tokens, token{"=", tokOperator})
+				sr.UnreadRune()
+			}
 		} else if r == '|' {
 			nextRune, _, err := sr.ReadRune()
 			if err == io.EOF {
@@ -473,12 +558,15 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 		} else if r == '!' {
 			nextRune, _, err := sr.ReadRune()
 			if err != nil {
-				return nil, err
+				// standalone ! at end of input
+				tokens = append(tokens, token{"!", tokOperator})
+				break
 			}
 			if nextRune == '=' {
 				tokens = append(tokens, token{"!=", tokOperator})
 			} else {
-				return nil, fmt.Errorf("= expected after !, got %s", string(nextRune))
+				tokens = append(tokens, token{"!", tokOperator})
+				sr.UnreadRune()
 			}
 		} else if r == '/' || r == ':' {
 			nextRune, _, err := sr.ReadRune()
