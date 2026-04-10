@@ -60,7 +60,7 @@ func jsonValueToElement(jsonStr string, escapeOpt bool) (*goxml.Element, error) 
 }
 
 // jsonDecodeValue reads one JSON value from the decoder.
-func jsonDecodeValue(dec *json.Decoder) (interface{}, error) {
+func jsonDecodeValue(dec *json.Decoder) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func jsonDecodeValue(dec *json.Decoder) (interface{}, error) {
 
 type jsonObject struct {
 	keys   []string
-	values []interface{}
+	values []any
 }
 
 func jsonDecodeObject(dec *json.Decoder) (*jsonObject, error) {
@@ -121,8 +121,8 @@ func jsonDecodeObject(dec *json.Decoder) (*jsonObject, error) {
 	return obj, nil
 }
 
-func jsonDecodeArray(dec *json.Decoder) ([]interface{}, error) {
-	var arr []interface{}
+func jsonDecodeArray(dec *json.Decoder) ([]any, error) {
+	var arr []any
 	for dec.More() {
 		val, err := jsonDecodeValue(dec)
 		if err != nil {
@@ -139,11 +139,11 @@ func jsonDecodeArray(dec *json.Decoder) ([]interface{}, error) {
 
 // jsonBuildElement creates an XML element for a JSON value.
 // key is the JSON object key (empty for top-level values).
-func jsonBuildElement(val interface{}, key string, escapeOpt bool) (*goxml.Element, error) {
+func jsonBuildElement(val any, key string, escapeOpt bool) (*goxml.Element, error) {
 	switch v := val.(type) {
 	case *jsonObject:
 		return jsonBuildMap(v, key, escapeOpt)
-	case []interface{}:
+	case []any:
 		return jsonBuildArray(v, key, escapeOpt)
 	case string:
 		return jsonBuildString(v, key, escapeOpt)
@@ -166,8 +166,8 @@ func jsonNewElement(localName string, key string) *goxml.Element {
 	elt.Namespaces["j"] = nsJSONXML
 	if key != "" {
 		elt.Append(goxml.Attribute{
-			ID:   goxml.NewID(),
-			Name: "key",
+			ID:    goxml.NewID(),
+			Name:  "key",
 			Value: key,
 		})
 	}
@@ -186,7 +186,7 @@ func jsonBuildMap(obj *jsonObject, key string, escapeOpt bool) (*goxml.Element, 
 	return elt, nil
 }
 
-func jsonBuildArray(arr []interface{}, key string, escapeOpt bool) (*goxml.Element, error) {
+func jsonBuildArray(arr []any, key string, escapeOpt bool) (*goxml.Element, error) {
 	elt := jsonNewElement("array", key)
 	for _, item := range arr {
 		child, err := jsonBuildElement(item, "", escapeOpt)

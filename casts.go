@@ -11,10 +11,8 @@ import (
 	"time"
 )
 
-var (
-	// ErrConversion is returned in case of an unsuccessful cast.
-	ErrConversion = fmt.Errorf("conversion failed")
-)
+// ErrConversion is returned in case of an unsuccessful cast.
+var ErrConversion = fmt.Errorf("conversion failed")
 
 // XSAnyURI represents an xs:anyURI value.
 type XSAnyURI string
@@ -41,19 +39,19 @@ type XSDecimal float64
 type IntSubtype uint8
 
 const (
-	IntInteger          IntSubtype = iota // xs:integer
-	IntLong                               // xs:long
-	IntInt                                // xs:int
-	IntShort                              // xs:short
-	IntByte                               // xs:byte
-	IntNonNegativeInteger                 // xs:nonNegativeInteger
-	IntUnsignedLong                       // xs:unsignedLong
-	IntUnsignedInt                        // xs:unsignedInt
-	IntUnsignedShort                      // xs:unsignedShort
-	IntUnsignedByte                       // xs:unsignedByte
-	IntPositiveInteger                    // xs:positiveInteger
-	IntNonPositiveInteger                 // xs:nonPositiveInteger
-	IntNegativeInteger                    // xs:negativeInteger
+	IntInteger            IntSubtype = iota // xs:integer
+	IntLong                                 // xs:long
+	IntInt                                  // xs:int
+	IntShort                                // xs:short
+	IntByte                                 // xs:byte
+	IntNonNegativeInteger                   // xs:nonNegativeInteger
+	IntUnsignedLong                         // xs:unsignedLong
+	IntUnsignedInt                          // xs:unsignedInt
+	IntUnsignedShort                        // xs:unsignedShort
+	IntUnsignedByte                         // xs:unsignedByte
+	IntPositiveInteger                      // xs:positiveInteger
+	IntNonPositiveInteger                   // xs:nonPositiveInteger
+	IntNegativeInteger                      // xs:negativeInteger
 )
 
 // intParent encodes the XSD integer type hierarchy.
@@ -115,44 +113,44 @@ type XSInteger struct {
 type StrSubtype uint8
 
 const (
-	StrString          StrSubtype = iota // xs:string
-	StrNormalizedString                  // xs:normalizedString
-	StrToken                             // xs:token
-	StrLanguage                          // xs:language
-	StrNMTOKEN                           // xs:NMTOKEN
-	StrName                              // xs:Name
-	StrNCName                            // xs:NCName
-	StrID                                // xs:ID
-	StrIDREF                             // xs:IDREF
-	StrENTITY                            // xs:ENTITY
+	StrString           StrSubtype = iota // xs:string
+	StrNormalizedString                   // xs:normalizedString
+	StrToken                              // xs:token
+	StrLanguage                           // xs:language
+	StrNMTOKEN                            // xs:NMTOKEN
+	StrName                               // xs:Name
+	StrNCName                             // xs:NCName
+	StrID                                 // xs:ID
+	StrIDREF                              // xs:IDREF
+	StrENTITY                             // xs:ENTITY
 )
 
 // strParent encodes the XSD string type hierarchy.
 var strParent = [...]StrSubtype{
-	StrString:          StrString, // root
+	StrString:           StrString, // root
 	StrNormalizedString: StrString,
-	StrToken:           StrNormalizedString,
-	StrLanguage:        StrToken,
-	StrNMTOKEN:         StrToken,
-	StrName:            StrToken,
-	StrNCName:          StrName,
-	StrID:              StrNCName,
-	StrIDREF:           StrNCName,
-	StrENTITY:          StrNCName,
+	StrToken:            StrNormalizedString,
+	StrLanguage:         StrToken,
+	StrNMTOKEN:          StrToken,
+	StrName:             StrToken,
+	StrNCName:           StrName,
+	StrID:               StrNCName,
+	StrIDREF:            StrNCName,
+	StrENTITY:           StrNCName,
 }
 
 // strSubtypeName maps StrSubtype to XSD type name.
 var strSubtypeName = [...]string{
-	StrString:          "xs:string",
+	StrString:           "xs:string",
 	StrNormalizedString: "xs:normalizedString",
-	StrToken:           "xs:token",
-	StrLanguage:        "xs:language",
-	StrNMTOKEN:         "xs:NMTOKEN",
-	StrName:            "xs:Name",
-	StrNCName:          "xs:NCName",
-	StrID:              "xs:ID",
-	StrIDREF:           "xs:IDREF",
-	StrENTITY:          "xs:ENTITY",
+	StrToken:            "xs:token",
+	StrLanguage:         "xs:language",
+	StrNMTOKEN:          "xs:NMTOKEN",
+	StrName:             "xs:Name",
+	StrNCName:           "xs:NCName",
+	StrID:               "xs:ID",
+	StrIDREF:            "xs:IDREF",
+	StrENTITY:           "xs:ENTITY",
 }
 
 // StrIsSubtypeOf returns true if child is the same as or a subtype of ancestor.
@@ -177,7 +175,7 @@ type XSString struct {
 
 // ToFloat64 extracts the float64 value from any numeric item.
 // Returns the value and true if the item is numeric, or 0 and false otherwise.
-func ToFloat64(itm interface{}) (float64, bool) {
+func ToFloat64(itm any) (float64, bool) {
 	switch v := itm.(type) {
 	case float64:
 		return v, true
@@ -207,7 +205,7 @@ const (
 )
 
 // NumericType returns the numeric type ID for an item.
-func NumericType(itm interface{}) NumericTypeID {
+func NumericType(itm any) NumericTypeID {
 	switch itm.(type) {
 	case int:
 		return NumInteger
@@ -610,14 +608,14 @@ func xsDate(ctx *Context, args []Sequence) (Sequence, error) {
 // intRanges defines value ranges for integer subtypes (min, max).
 // Types not in this map have no range restriction.
 var intRanges = map[IntSubtype][2]int64{
-	IntByte:          {-128, 127},
-	IntShort:         {-32768, 32767},
-	IntInt:           {-2147483648, 2147483647},
-	IntLong:          {-9223372036854775808, 9223372036854775807},
-	IntUnsignedByte:  {0, 255},
-	IntUnsignedShort: {0, 65535},
-	IntUnsignedInt:   {0, 4294967295},
-	IntUnsignedLong:  {0, 9223372036854775807}, // Go int is int64
+	IntByte:               {-128, 127},
+	IntShort:              {-32768, 32767},
+	IntInt:                {-2147483648, 2147483647},
+	IntLong:               {-9223372036854775808, 9223372036854775807},
+	IntUnsignedByte:       {0, 255},
+	IntUnsignedShort:      {0, 65535},
+	IntUnsignedInt:        {0, 4294967295},
+	IntUnsignedLong:       {0, 9223372036854775807}, // Go int is int64
 	IntPositiveInteger:    {1, 9223372036854775807},
 	IntNonNegativeInteger: {0, 9223372036854775807},
 	IntNonPositiveInteger: {-9223372036854775808, 0},
@@ -704,7 +702,7 @@ func validateStringSubtype(sv string, subtype StrSubtype) error {
 	return nil
 }
 
-func xsInteger(ctx *Context, args []Sequence) (Sequence, error) {
+func xsInteger(_ *Context, args []Sequence) (Sequence, error) {
 	if len(args[0]) == 0 {
 		return Sequence{}, nil
 	}
@@ -738,14 +736,6 @@ func xsInteger(ctx *Context, args []Sequence) (Sequence, error) {
 		return Sequence{int(i)}, nil
 	}
 	return nil, NewXPathError("FORG0001", fmt.Sprintf("cannot cast %q to xs:integer", sv))
-}
-
-func xsString(ctx *Context, args []Sequence) (Sequence, error) {
-	sv, err := StringValue(args[0])
-	if err != nil {
-		return nil, err
-	}
-	return Sequence{sv}, nil
 }
 
 func xsDateTime(ctx *Context, args []Sequence) (Sequence, error) {
@@ -952,7 +942,7 @@ func init() {
 			if d, ok := args[0][0].(XSDuration); ok {
 				return Sequence{XSDuration{
 					Negative: d.Negative,
-					Days: d.Days, Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds,
+					Days:     d.Days, Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds,
 				}}, nil
 			}
 		}
@@ -967,7 +957,7 @@ func init() {
 		// Extract only day/time components (drop years/months)
 		return Sequence{XSDuration{
 			Negative: d.Negative,
-			Days: d.Days, Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds,
+			Days:     d.Days, Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds,
 		}}, nil
 	}, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "yearMonthDuration", Namespace: nsXS, F: func(ctx *Context, args []Sequence) (Sequence, error) {
@@ -976,7 +966,7 @@ func init() {
 			if d, ok := args[0][0].(XSDuration); ok {
 				return Sequence{XSDuration{
 					Negative: d.Negative,
-					Years: d.Years, Months: d.Months,
+					Years:    d.Years, Months: d.Months,
 				}}, nil
 			}
 		}
@@ -991,7 +981,7 @@ func init() {
 		// Extract only year/month components (drop day/time)
 		return Sequence{XSDuration{
 			Negative: d.Negative,
-			Years: d.Years, Months: d.Months,
+			Years:    d.Years, Months: d.Months,
 		}}, nil
 	}, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "date", Namespace: nsXS, F: xsDate, MinArg: 1, MaxArg: 1})
@@ -1096,9 +1086,9 @@ func init() {
 			return nil, err
 		}
 		var prefix, local, ns string
-		if idx := strings.IndexByte(sv, ':'); idx >= 0 {
-			prefix = sv[:idx]
-			local = sv[idx+1:]
+		if before, after, ok := strings.Cut(sv, ":"); ok {
+			prefix = before
+			local = after
 			if ctx != nil {
 				ns = ctx.Namespaces[prefix]
 			}

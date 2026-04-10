@@ -27,7 +27,7 @@ func TestFnDoc(t *testing.T) {
 
 	// Set the baseURI in Store so relative paths resolve
 	baseURI := filepath.Join(tmpDir, "base.xsl")
-	np.Ctx.Store = map[interface{}]interface{}{
+	np.Ctx.Store = map[any]any{
 		"baseURI": baseURI,
 	}
 
@@ -59,7 +59,7 @@ func TestFnDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	np3.Ctx.Store = map[interface{}]interface{}{}
+	np3.Ctx.Store = map[any]any{}
 
 	seq3, err := np3.Evaluate(`doc('` + extFile + `')`)
 	if err != nil {
@@ -87,7 +87,7 @@ func TestFnDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	np5.Ctx.Store = map[interface{}]interface{}{
+	np5.Ctx.Store = map[any]any{
 		"baseURI": baseURI,
 	}
 

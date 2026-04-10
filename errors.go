@@ -47,7 +47,7 @@ func XPathErrorCode(err error) (string, bool) {
 }
 
 // errorAs is a wrapper for errors.As to keep the import clean.
-func errorAs(err error, target interface{}) bool {
+func errorAs(err error, target any) bool {
 	// Use type assertion since we know the target type
 	if xe, ok := err.(*XPathError); ok {
 		if t, ok2 := target.(**XPathError); ok2 {
@@ -59,8 +59,8 @@ func errorAs(err error, target interface{}) bool {
 }
 
 // TypeIDOf returns the XPath type identifier for an item.
-func TypeIDOf(itm interface{}) string {
-	switch itm.(type) {
+func TypeIDOf(itm any) string {
+	switch itm := itm.(type) {
 	case XSDouble:
 		return "xs:double"
 	case XSFloat:
@@ -70,13 +70,13 @@ func TypeIDOf(itm interface{}) string {
 	case int:
 		return "xs:integer"
 	case XSInteger:
-		return intSubtypeName[itm.(XSInteger).Subtype]
+		return intSubtypeName[itm.Subtype]
 	case float64:
 		return "xs:double"
 	case string:
 		return "xs:string"
 	case XSString:
-		return strSubtypeName[itm.(XSString).Subtype]
+		return strSubtypeName[itm.Subtype]
 	case bool:
 		return "xs:boolean"
 	case XSAnyURI:
@@ -155,17 +155,21 @@ func castAllowed(sourceType, targetType string) bool {
 	// Date/time types — strict casting matrix per XPath spec
 	// Key: source → allowed targets (in addition to string/untypedAtomic)
 	dateTimeCasts := map[string]map[string]bool{
-		"xs:dateTime": {"xs:dateTime": true, "xs:date": true, "xs:time": true,
+		"xs:dateTime": {
+			"xs:dateTime": true, "xs:date": true, "xs:time": true,
 			"xs:gYear": true, "xs:gMonth": true, "xs:gDay": true,
-			"xs:gYearMonth": true, "xs:gMonthDay": true},
-		"xs:date": {"xs:dateTime": true, "xs:date": true,
+			"xs:gYearMonth": true, "xs:gMonthDay": true,
+		},
+		"xs:date": {
+			"xs:dateTime": true, "xs:date": true,
 			"xs:gYear": true, "xs:gMonth": true, "xs:gDay": true,
-			"xs:gYearMonth": true, "xs:gMonthDay": true},
+			"xs:gYearMonth": true, "xs:gMonthDay": true,
+		},
 		"xs:time":       {"xs:time": true},
 		"xs:gYear":      {"xs:gYear": true},
 		"xs:gMonth":     {"xs:gMonth": true},
 		"xs:gDay":       {"xs:gDay": true},
-		"xs:gYearMonth":  {"xs:gYearMonth": true},
+		"xs:gYearMonth": {"xs:gYearMonth": true},
 		"xs:gMonthDay":  {"xs:gMonthDay": true},
 	}
 	if allowed, ok := dateTimeCasts[sourceType]; ok {

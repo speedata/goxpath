@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -903,7 +904,7 @@ func fnDoc(ctx *Context, args []Sequence) (Sequence, error) {
 
 	// Initialize Store and doc-cache if needed
 	if ctx.Store == nil {
-		ctx.Store = make(map[interface{}]interface{})
+		ctx.Store = make(map[any]any)
 	}
 	cache, ok := ctx.Store["doc-cache"].(map[string]*goxml.XMLDocument)
 	if !ok {
@@ -1135,25 +1136,25 @@ func detectDigitFamily(r rune) (rune, bool) {
 	// Check standard Unicode decimal digit ranges
 	// Each range has 10 consecutive code points (0-9)
 	digitRanges := [][2]rune{
-		{0x0030, 0x0039}, // ASCII 0-9
-		{0x0660, 0x0669}, // Arabic-Indic ٠-٩
-		{0x06F0, 0x06F9}, // Extended Arabic-Indic ۰-۹
-		{0x0966, 0x096F}, // Devanagari ०-९
-		{0x09E6, 0x09EF}, // Bengali ০-৯
-		{0x0A66, 0x0A6F}, // Gurmukhi ੦-੯
-		{0x0AE6, 0x0AEF}, // Gujarati ૦-૯
-		{0x0B66, 0x0B6F}, // Oriya ୦-୯
-		{0x0BE6, 0x0BEF}, // Tamil ௦-௯
-		{0x0C66, 0x0C6F}, // Telugu ౦-౯
-		{0x0CE6, 0x0CEF}, // Kannada ೦-೯
-		{0x0D66, 0x0D6F}, // Malayalam ൦-൯
-		{0x0E50, 0x0E59}, // Thai ๐-๙
-		{0x0ED0, 0x0ED9}, // Lao ໐-໙
-		{0x0F20, 0x0F29}, // Tibetan ༠-༩
-		{0x1040, 0x1049}, // Myanmar ၀-၉
-		{0x17E0, 0x17E9}, // Khmer ០-៩
-		{0x1810, 0x1819}, // Mongolian ᠐-᠙
-		{0xFF10, 0xFF19}, // Fullwidth ０-９
+		{0x0030, 0x0039},   // ASCII 0-9
+		{0x0660, 0x0669},   // Arabic-Indic ٠-٩
+		{0x06F0, 0x06F9},   // Extended Arabic-Indic ۰-۹
+		{0x0966, 0x096F},   // Devanagari ०-९
+		{0x09E6, 0x09EF},   // Bengali ০-৯
+		{0x0A66, 0x0A6F},   // Gurmukhi ੦-੯
+		{0x0AE6, 0x0AEF},   // Gujarati ૦-૯
+		{0x0B66, 0x0B6F},   // Oriya ୦-୯
+		{0x0BE6, 0x0BEF},   // Tamil ௦-௯
+		{0x0C66, 0x0C6F},   // Telugu ౦-౯
+		{0x0CE6, 0x0CEF},   // Kannada ೦-೯
+		{0x0D66, 0x0D6F},   // Malayalam ൦-൯
+		{0x0E50, 0x0E59},   // Thai ๐-๙
+		{0x0ED0, 0x0ED9},   // Lao ໐-໙
+		{0x0F20, 0x0F29},   // Tibetan ༠-༩
+		{0x1040, 0x1049},   // Myanmar ၀-၉
+		{0x17E0, 0x17E9},   // Khmer ០-៩
+		{0x1810, 0x1819},   // Mongolian ᠐-᠙
+		{0xFF10, 0xFF19},   // Fullwidth ０-９
 		{0x104A0, 0x104A9}, // Osmanya 𐒠-𐒩
 	}
 	for _, rng := range digitRanges {
@@ -1245,10 +1246,8 @@ func validateFormatNumberPicture(pic string, decSep, grpSep rune) error {
 	pattern := runes[start:end]
 
 	// Check for uppercase E (invalid as exponent separator)
-	for _, r := range pattern {
-		if r == 'E' {
-			return NewXPathError("FODF1310", "invalid picture: 'E' is not a valid exponent separator (use 'e')")
-		}
+	if slices.Contains(pattern, 'E') {
+		return NewXPathError("FODF1310", "invalid picture: 'E' is not a valid exponent separator (use 'e')")
 	}
 
 	// Check for multiple exponent separators ('e' followed by digit)
@@ -1294,7 +1293,7 @@ func validateFormatNumberPicture(pic string, decSep, grpSep rune) error {
 	// The hasExp check above already correctly identifies exponent 'e'.
 
 	// Check for adjacent grouping separators or grouping at edges
-	for i := 0; i < len(pattern); i++ {
+	for i := range pattern {
 		if pattern[i] == grpSep {
 			// Trailing grouping separator
 			if i == len(pattern)-1 {
@@ -1657,9 +1656,9 @@ func formatSubPicture(num float64, pic string, decSep, grpSep, zero, dig rune, m
 		}
 		if exponent < 0 {
 			result.WriteRune('-')
-			result.WriteString(fmt.Sprintf("%0*d", minExpDigits, -exponent))
+			fmt.Fprintf(&result, "%0*d", minExpDigits, -exponent)
 		} else {
-			result.WriteString(fmt.Sprintf("%0*d", minExpDigits, exponent))
+			fmt.Fprintf(&result, "%0*d", minExpDigits, exponent)
 		}
 	}
 	if multiplier != "" {
@@ -1685,8 +1684,10 @@ func numberToWords(n int) string {
 		n = -n
 	}
 
-	ones := []string{"", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"}
+	ones := []string{
+		"", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+	}
 	tens := []string{"", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
 
 	var parts []string
@@ -1793,33 +1794,33 @@ func fnFormatInteger(ctx *Context, args []Sequence) (Sequence, error) {
 	// Split off ordinal modifier: "1;o", "Ww;o(-er)", etc.
 	mainPic := picture
 	ordinalMod := ""
-	if idx := strings.Index(picture, ";"); idx >= 0 {
-		mainPic = picture[:idx]
-		ordinalMod = picture[idx+1:]
+	if before, after, ok := strings.Cut(picture, ";"); ok {
+		mainPic = before
+		ordinalMod = after
 	}
 
-	switch {
-	case mainPic == "A":
+	switch mainPic {
+	case "A":
 		return Sequence{formatIntegerAlpha(intVal, 'A')}, nil
-	case mainPic == "a":
+	case "a":
 		return Sequence{formatIntegerAlpha(intVal, 'a')}, nil
-	case mainPic == "I":
+	case "I":
 		return Sequence{formatRoman(intVal, true)}, nil
-	case mainPic == "i":
+	case "i":
 		return Sequence{formatRoman(intVal, false)}, nil
-	case mainPic == "W":
+	case "W":
 		w := numberToWords(intVal)
 		if strings.HasPrefix(ordinalMod, "o") {
 			w = numberToOrdinalWords(intVal)
 		}
 		return Sequence{strings.ToUpper(w)}, nil
-	case mainPic == "w":
+	case "w":
 		w := numberToWords(intVal)
 		if strings.HasPrefix(ordinalMod, "o") {
 			w = numberToOrdinalWords(intVal)
 		}
 		return Sequence{w}, nil
-	case mainPic == "Ww":
+	case "Ww":
 		w := numberToWords(intVal)
 		if strings.HasPrefix(ordinalMod, "o") {
 			w = numberToOrdinalWords(intVal)
@@ -2123,9 +2124,9 @@ func fnQName(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, err
 	}
 	var prefix, localname string
-	if idx := strings.IndexByte(qnameStr, ':'); idx >= 0 {
-		prefix = qnameStr[:idx]
-		localname = qnameStr[idx+1:]
+	if before, after, ok := strings.Cut(qnameStr, ":"); ok {
+		prefix = before
+		localname = after
 	} else {
 		localname = qnameStr
 	}
@@ -2151,9 +2152,9 @@ func fnResolveQName(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, fmt.Errorf("second argument to resolve-QName must be an element")
 	}
 	var prefix, localname string
-	if idx := strings.IndexByte(qnameStr, ':'); idx >= 0 {
-		prefix = qnameStr[:idx]
-		localname = qnameStr[idx+1:]
+	if before, after, ok0 := strings.Cut(qnameStr, ":"); ok0 {
+		prefix = before
+		localname = after
 	} else {
 		localname = qnameStr
 	}
@@ -2210,13 +2211,7 @@ func fnInsertBefore(ctx *Context, args []Sequence) (Sequence, error) {
 		return nil, err
 	}
 	inserts := args[2]
-	pos := int(posVal)
-	if pos < 1 {
-		pos = 1
-	}
-	if pos > len(target)+1 {
-		pos = len(target) + 1
-	}
+	pos := min(max(int(posVal), 1), len(target)+1)
 	result := make(Sequence, 0, len(target)+len(inserts))
 	result = append(result, target[:pos-1]...)
 	result = append(result, inserts...)
@@ -2310,99 +2305,99 @@ func xpathRegexToGo(pattern string) string {
 
 	// Map of XPath Unicode block names to Go character ranges (Unicode 3.1 blocks)
 	blockMap := map[string]string{
-		"IsBasicLatin":                          `\x{0000}-\x{007F}`,
-		"IsLatin-1Supplement":                   `\x{0080}-\x{00FF}`,
-		"IsLatinExtended-A":                     `\x{0100}-\x{017F}`,
-		"IsLatinExtended-B":                     `\x{0180}-\x{024F}`,
-		"IsIPAExtensions":                       `\x{0250}-\x{02AF}`,
-		"IsSpacingModifierLetters":              `\x{02B0}-\x{02FF}`,
-		"IsCombiningDiacriticalMarks":           `\x{0300}-\x{036F}`,
-		"IsGreek":                               `\x{0370}-\x{03FF}`,
-		"IsGreekandCoptic":                      `\x{0370}-\x{03FF}`,
-		"IsCyrillic":                            `\x{0400}-\x{04FF}`,
-		"IsArmenian":                            `\x{0530}-\x{058F}`,
-		"IsHebrew":                              `\x{0590}-\x{05FF}`,
-		"IsArabic":                              `\x{0600}-\x{06FF}`,
-		"IsSyriac":                              `\x{0700}-\x{074F}`,
-		"IsThaana":                              `\x{0780}-\x{07BF}`,
-		"IsDevanagari":                          `\x{0900}-\x{097F}`,
-		"IsBengali":                             `\x{0980}-\x{09FF}`,
-		"IsGurmukhi":                            `\x{0A00}-\x{0A7F}`,
-		"IsGujarati":                            `\x{0A80}-\x{0AFF}`,
-		"IsOriya":                               `\x{0B00}-\x{0B7F}`,
-		"IsTamil":                               `\x{0B80}-\x{0BFF}`,
-		"IsTelugu":                              `\x{0C00}-\x{0C7F}`,
-		"IsKannada":                             `\x{0C80}-\x{0CFF}`,
-		"IsMalayalam":                           `\x{0D00}-\x{0D7F}`,
-		"IsSinhala":                             `\x{0D80}-\x{0DFF}`,
-		"IsThai":                                `\x{0E00}-\x{0E7F}`,
-		"IsLao":                                 `\x{0E80}-\x{0EFF}`,
-		"IsTibetan":                             `\x{0F00}-\x{0FFF}`,
-		"IsMyanmar":                             `\x{1000}-\x{109F}`,
-		"IsGeorgian":                            `\x{10A0}-\x{10FF}`,
-		"IsHangulJamo":                          `\x{1100}-\x{11FF}`,
-		"IsEthiopic":                            `\x{1200}-\x{137F}`,
-		"IsCherokee":                            `\x{13A0}-\x{13FF}`,
-		"IsUnifiedCanadianAboriginalSyllabics":  `\x{1400}-\x{167F}`,
-		"IsOgham":                               `\x{1680}-\x{169F}`,
-		"IsRunic":                               `\x{16A0}-\x{16FF}`,
-		"IsKhmer":                               `\x{1780}-\x{17FF}`,
-		"IsMongolian":                           `\x{1800}-\x{18AF}`,
-		"IsLatinExtendedAdditional":             `\x{1E00}-\x{1EFF}`,
-		"IsGreekExtended":                       `\x{1F00}-\x{1FFF}`,
-		"IsGeneralPunctuation":                  `\x{2000}-\x{206F}`,
-		"IsSuperscriptsandSubscripts":           `\x{2070}-\x{209F}`,
-		"IsCurrencySymbols":                     `\x{20A0}-\x{20CF}`,
-		"IsCombiningDiacriticalMarksforSymbols": `\x{20D0}-\x{20FF}`,
-		"IsLetterlikeSymbols":                   `\x{2100}-\x{214F}`,
-		"IsNumberForms":                         `\x{2150}-\x{218F}`,
-		"IsArrows":                              `\x{2190}-\x{21FF}`,
-		"IsMathematicalOperators":               `\x{2200}-\x{22FF}`,
-		"IsMiscellaneousTechnical":              `\x{2300}-\x{23FF}`,
-		"IsControlPictures":                     `\x{2400}-\x{243F}`,
-		"IsOpticalCharacterRecognition":         `\x{2440}-\x{245F}`,
-		"IsEnclosedAlphanumerics":               `\x{2460}-\x{24FF}`,
-		"IsBoxDrawing":                          `\x{2500}-\x{257F}`,
-		"IsBlockElements":                       `\x{2580}-\x{259F}`,
-		"IsGeometricShapes":                     `\x{25A0}-\x{25FF}`,
-		"IsMiscellaneousSymbols":                `\x{2600}-\x{26FF}`,
-		"IsDingbats":                            `\x{2700}-\x{27BF}`,
-		"IsBraillePatterns":                     `\x{2800}-\x{28FF}`,
-		"IsCJKRadicalsSupplement":               `\x{2E80}-\x{2EFF}`,
-		"IsKangxiRadicals":                      `\x{2F00}-\x{2FDF}`,
-		"IsIdeographicDescriptionCharacters":    `\x{2FF0}-\x{2FFF}`,
-		"IsCJKSymbolsandPunctuation":            `\x{3000}-\x{303F}`,
-		"IsHiragana":                            `\x{3040}-\x{309F}`,
-		"IsKatakana":                            `\x{30A0}-\x{30FF}`,
-		"IsBopomofo":                            `\x{3100}-\x{312F}`,
-		"IsHangulCompatibilityJamo":             `\x{3130}-\x{318F}`,
-		"IsKanbun":                              `\x{3190}-\x{319F}`,
-		"IsBopomofoExtended":                    `\x{31A0}-\x{31BF}`,
-		"IsEnclosedCJKLettersandMonths":         `\x{3200}-\x{32FF}`,
-		"IsCJKCompatibility":                    `\x{3300}-\x{33FF}`,
-		"IsCJKUnifiedIdeographsExtensionA":      `\x{3400}-\x{4DBF}`,
-		"IsCJKUnifiedIdeographs":                `\x{4E00}-\x{9FFF}`,
-		"IsYiSyllables":                         `\x{A000}-\x{A48F}`,
-		"IsYiRadicals":                          `\x{A490}-\x{A4CF}`,
-		"IsHangulSyllables":                     `\x{AC00}-\x{D7AF}`,
-		"IsPrivateUse":                          `\x{E000}-\x{F8FF}`,
-		"IsPrivateUseArea":                      `\x{E000}-\x{F8FF}`,
-		"IsCJKCompatibilityIdeographs":          `\x{F900}-\x{FAFF}`,
-		"IsAlphabeticPresentationForms":         `\x{FB00}-\x{FB4F}`,
-		"IsArabicPresentationForms-A":           `\x{FB50}-\x{FDFF}`,
-		"IsCombiningHalfMarks":                  `\x{FE20}-\x{FE2F}`,
-		"IsCJKCompatibilityForms":               `\x{FE30}-\x{FE4F}`,
+		"IsBasicLatin":                           `\x{0000}-\x{007F}`,
+		"IsLatin-1Supplement":                    `\x{0080}-\x{00FF}`,
+		"IsLatinExtended-A":                      `\x{0100}-\x{017F}`,
+		"IsLatinExtended-B":                      `\x{0180}-\x{024F}`,
+		"IsIPAExtensions":                        `\x{0250}-\x{02AF}`,
+		"IsSpacingModifierLetters":               `\x{02B0}-\x{02FF}`,
+		"IsCombiningDiacriticalMarks":            `\x{0300}-\x{036F}`,
+		"IsGreek":                                `\x{0370}-\x{03FF}`,
+		"IsGreekandCoptic":                       `\x{0370}-\x{03FF}`,
+		"IsCyrillic":                             `\x{0400}-\x{04FF}`,
+		"IsArmenian":                             `\x{0530}-\x{058F}`,
+		"IsHebrew":                               `\x{0590}-\x{05FF}`,
+		"IsArabic":                               `\x{0600}-\x{06FF}`,
+		"IsSyriac":                               `\x{0700}-\x{074F}`,
+		"IsThaana":                               `\x{0780}-\x{07BF}`,
+		"IsDevanagari":                           `\x{0900}-\x{097F}`,
+		"IsBengali":                              `\x{0980}-\x{09FF}`,
+		"IsGurmukhi":                             `\x{0A00}-\x{0A7F}`,
+		"IsGujarati":                             `\x{0A80}-\x{0AFF}`,
+		"IsOriya":                                `\x{0B00}-\x{0B7F}`,
+		"IsTamil":                                `\x{0B80}-\x{0BFF}`,
+		"IsTelugu":                               `\x{0C00}-\x{0C7F}`,
+		"IsKannada":                              `\x{0C80}-\x{0CFF}`,
+		"IsMalayalam":                            `\x{0D00}-\x{0D7F}`,
+		"IsSinhala":                              `\x{0D80}-\x{0DFF}`,
+		"IsThai":                                 `\x{0E00}-\x{0E7F}`,
+		"IsLao":                                  `\x{0E80}-\x{0EFF}`,
+		"IsTibetan":                              `\x{0F00}-\x{0FFF}`,
+		"IsMyanmar":                              `\x{1000}-\x{109F}`,
+		"IsGeorgian":                             `\x{10A0}-\x{10FF}`,
+		"IsHangulJamo":                           `\x{1100}-\x{11FF}`,
+		"IsEthiopic":                             `\x{1200}-\x{137F}`,
+		"IsCherokee":                             `\x{13A0}-\x{13FF}`,
+		"IsUnifiedCanadianAboriginalSyllabics":   `\x{1400}-\x{167F}`,
+		"IsOgham":                                `\x{1680}-\x{169F}`,
+		"IsRunic":                                `\x{16A0}-\x{16FF}`,
+		"IsKhmer":                                `\x{1780}-\x{17FF}`,
+		"IsMongolian":                            `\x{1800}-\x{18AF}`,
+		"IsLatinExtendedAdditional":              `\x{1E00}-\x{1EFF}`,
+		"IsGreekExtended":                        `\x{1F00}-\x{1FFF}`,
+		"IsGeneralPunctuation":                   `\x{2000}-\x{206F}`,
+		"IsSuperscriptsandSubscripts":            `\x{2070}-\x{209F}`,
+		"IsCurrencySymbols":                      `\x{20A0}-\x{20CF}`,
+		"IsCombiningDiacriticalMarksforSymbols":  `\x{20D0}-\x{20FF}`,
+		"IsLetterlikeSymbols":                    `\x{2100}-\x{214F}`,
+		"IsNumberForms":                          `\x{2150}-\x{218F}`,
+		"IsArrows":                               `\x{2190}-\x{21FF}`,
+		"IsMathematicalOperators":                `\x{2200}-\x{22FF}`,
+		"IsMiscellaneousTechnical":               `\x{2300}-\x{23FF}`,
+		"IsControlPictures":                      `\x{2400}-\x{243F}`,
+		"IsOpticalCharacterRecognition":          `\x{2440}-\x{245F}`,
+		"IsEnclosedAlphanumerics":                `\x{2460}-\x{24FF}`,
+		"IsBoxDrawing":                           `\x{2500}-\x{257F}`,
+		"IsBlockElements":                        `\x{2580}-\x{259F}`,
+		"IsGeometricShapes":                      `\x{25A0}-\x{25FF}`,
+		"IsMiscellaneousSymbols":                 `\x{2600}-\x{26FF}`,
+		"IsDingbats":                             `\x{2700}-\x{27BF}`,
+		"IsBraillePatterns":                      `\x{2800}-\x{28FF}`,
+		"IsCJKRadicalsSupplement":                `\x{2E80}-\x{2EFF}`,
+		"IsKangxiRadicals":                       `\x{2F00}-\x{2FDF}`,
+		"IsIdeographicDescriptionCharacters":     `\x{2FF0}-\x{2FFF}`,
+		"IsCJKSymbolsandPunctuation":             `\x{3000}-\x{303F}`,
+		"IsHiragana":                             `\x{3040}-\x{309F}`,
+		"IsKatakana":                             `\x{30A0}-\x{30FF}`,
+		"IsBopomofo":                             `\x{3100}-\x{312F}`,
+		"IsHangulCompatibilityJamo":              `\x{3130}-\x{318F}`,
+		"IsKanbun":                               `\x{3190}-\x{319F}`,
+		"IsBopomofoExtended":                     `\x{31A0}-\x{31BF}`,
+		"IsEnclosedCJKLettersandMonths":          `\x{3200}-\x{32FF}`,
+		"IsCJKCompatibility":                     `\x{3300}-\x{33FF}`,
+		"IsCJKUnifiedIdeographsExtensionA":       `\x{3400}-\x{4DBF}`,
+		"IsCJKUnifiedIdeographs":                 `\x{4E00}-\x{9FFF}`,
+		"IsYiSyllables":                          `\x{A000}-\x{A48F}`,
+		"IsYiRadicals":                           `\x{A490}-\x{A4CF}`,
+		"IsHangulSyllables":                      `\x{AC00}-\x{D7AF}`,
+		"IsPrivateUse":                           `\x{E000}-\x{F8FF}`,
+		"IsPrivateUseArea":                       `\x{E000}-\x{F8FF}`,
+		"IsCJKCompatibilityIdeographs":           `\x{F900}-\x{FAFF}`,
+		"IsAlphabeticPresentationForms":          `\x{FB00}-\x{FB4F}`,
+		"IsArabicPresentationForms-A":            `\x{FB50}-\x{FDFF}`,
+		"IsCombiningHalfMarks":                   `\x{FE20}-\x{FE2F}`,
+		"IsCJKCompatibilityForms":                `\x{FE30}-\x{FE4F}`,
 		"IsSmallFormVariants":                    `\x{FE50}-\x{FE6F}`,
-		"IsArabicPresentationForms-B":           `\x{FE70}-\x{FEFF}`,
-		"IsHalfwidthandFullwidthForms":          `\x{FF00}-\x{FFEF}`,
-		"IsSpecials":                            `\x{FFF0}-\x{FFFF}`,
-		"IsOldItalic":                           `\x{10300}-\x{1032F}`,
-		"IsGothic":                              `\x{10330}-\x{1034F}`,
-		"IsDeseret":                             `\x{10400}-\x{1044F}`,
-		"IsByzantineMusicalSymbols":             `\x{1D000}-\x{1D0FF}`,
-		"IsMusicalSymbols":                      `\x{1D100}-\x{1D1FF}`,
+		"IsArabicPresentationForms-B":            `\x{FE70}-\x{FEFF}`,
+		"IsHalfwidthandFullwidthForms":           `\x{FF00}-\x{FFEF}`,
+		"IsSpecials":                             `\x{FFF0}-\x{FFFF}`,
+		"IsOldItalic":                            `\x{10300}-\x{1032F}`,
+		"IsGothic":                               `\x{10330}-\x{1034F}`,
+		"IsDeseret":                              `\x{10400}-\x{1044F}`,
+		"IsByzantineMusicalSymbols":              `\x{1D000}-\x{1D0FF}`,
+		"IsMusicalSymbols":                       `\x{1D100}-\x{1D1FF}`,
 		"IsMathematicalAlphanumericSymbols":      `\x{1D400}-\x{1D7FF}`,
-		"IsCJKUnifiedIdeographsExtensionB":      `\x{20000}-\x{2A6DF}`,
+		"IsCJKUnifiedIdeographsExtensionB":       `\x{20000}-\x{2A6DF}`,
 		"IsCJKCompatibilityIdeographsSupplement": `\x{2F800}-\x{2FA1F}`,
 		"IsTags":                                 `\x{E0000}-\x{E007F}`,
 		"IsSupplementaryPrivateUseArea-A":        `\x{F0000}-\x{FFFFF}`,
@@ -2480,18 +2475,20 @@ func removeCharClassSubtraction(pattern string) string {
 					i += 2 // skip -[
 					subDepth := 1
 					for i < len(runes) && subDepth > 0 {
-						if runes[i] == '[' {
+						switch runes[i] {
+						case '[':
 							subDepth++
-						} else if runes[i] == ']' {
+						case ']':
 							subDepth--
 						}
 						i++
 					}
 					continue
 				}
-				if runes[i] == '[' {
+				switch runes[i] {
+				case '[':
 					depth++
-				} else if runes[i] == ']' {
+				case ']':
 					depth--
 				}
 				result = append(result, runes[i])
@@ -3560,9 +3557,9 @@ func parseComponentModifier(mod string) (string, int, int) {
 		presentation = strings.TrimSpace(mod[:idx])
 		widthStr := strings.TrimSpace(mod[idx+1:])
 		// Parse min-max
-		if dashIdx := strings.Index(widthStr, "-"); dashIdx >= 0 {
-			minStr := widthStr[:dashIdx]
-			maxStr := widthStr[dashIdx+1:]
+		if before, after, ok := strings.Cut(widthStr, "-"); ok {
+			minStr := before
+			maxStr := after
 			if minStr != "*" {
 				minW, _ = strconv.Atoi(minStr)
 			}
@@ -3733,11 +3730,12 @@ func formatDateTimeComponent(t time.Time, spec rune, presentation string, minWid
 		return fmt.Sprintf("%s%02d:%02d", sign, h, m)
 	case 'P': // am/pm
 		am, pm := "a.m.", "p.m."
-		if presentation == "N" {
+		switch presentation {
+		case "N":
 			am, pm = "AM", "PM"
-		} else if presentation == "n" {
+		case "n":
 			am, pm = "am", "pm"
-		} else if presentation == "Nn" {
+		case "Nn":
 			am, pm = "Am", "Pm"
 		}
 		if t.Hour() < 12 {
@@ -3763,10 +3761,9 @@ func formatInt(val, minWidth int) string {
 	return fmt.Sprintf("%0*d", minWidth, val)
 }
 
-
 // jsonToXPath converts a JSON string to XPath maps/arrays/atomic values.
 func jsonToXPath(jsonStr string) (Item, error) {
-	var raw interface{}
+	var raw any
 	dec := json.NewDecoder(strings.NewReader(jsonStr))
 	dec.UseNumber()
 	if err := dec.Decode(&raw); err != nil {
@@ -3775,7 +3772,7 @@ func jsonToXPath(jsonStr string) (Item, error) {
 	return jsonValueToXPath(raw)
 }
 
-func jsonValueToXPath(v interface{}) (Item, error) {
+func jsonValueToXPath(v any) (Item, error) {
 	switch val := v.(type) {
 	case nil:
 		return nil, nil // XPath empty sequence for JSON null
@@ -3801,7 +3798,7 @@ func jsonValueToXPath(v interface{}) (Item, error) {
 		return int(i), nil
 	case string:
 		return val, nil
-	case []interface{}:
+	case []any:
 		members := make([]Sequence, len(val))
 		for i, elem := range val {
 			item, err := jsonValueToXPath(elem)
@@ -3815,7 +3812,7 @@ func jsonValueToXPath(v interface{}) (Item, error) {
 			}
 		}
 		return &XPathArray{Members: members}, nil
-	case map[string]interface{}:
+	case map[string]any:
 		var entries []MapEntry
 		for k, v := range val {
 			item, err := jsonValueToXPath(v)
@@ -3837,12 +3834,15 @@ func jsonValueToXPath(v interface{}) (Item, error) {
 
 // makeRNGMap creates a random-number-generator result map.
 func makeRNGMap() *XPathMap {
-	permuteFn := &XPathFunction{Name: "permute", Namespace: nsFN, Arity: 1,
+	permuteFn := &XPathFunction{
+		Name: "permute", Namespace: nsFN, Arity: 1,
 		Fn: func(ctx *Context, args []Sequence) (Sequence, error) {
 			return args[0], nil // identity permutation
-		}}
+		},
+	}
 	var nextFn *XPathFunction
-	nextFn = &XPathFunction{Name: "next", Namespace: nsFN, Arity: 0,
+	nextFn = &XPathFunction{
+		Name: "next", Namespace: nsFN, Arity: 0,
 		Fn: func(ctx *Context, args []Sequence) (Sequence, error) {
 			m := &XPathMap{Entries: []MapEntry{
 				{Key: "number", Value: Sequence{XSDouble(0.5)}},
@@ -3850,7 +3850,8 @@ func makeRNGMap() *XPathMap {
 				{Key: "permute", Value: Sequence{permuteFn}},
 			}}
 			return Sequence{m}, nil
-		}}
+		},
+	}
 	return &XPathMap{Entries: []MapEntry{
 		{Key: "number", Value: Sequence{XSDouble(0.5)}},
 		{Key: "next", Value: Sequence{nextFn}},
@@ -4127,9 +4128,7 @@ func init() {
 			return nil, NewXPathError("XPTY0004", "second argument of fn:apply must be an array")
 		}
 		fnArgs := make([]Sequence, len(arr.Members))
-		for i, m := range arr.Members {
-			fnArgs[i] = m
-		}
+		copy(fnArgs, arr.Members)
 		return fn.Call(ctx, fnArgs)
 	}, MinArg: 2, MaxArg: 2})
 	RegisterFunction(&Function{Name: "concat", Namespace: nsFN, F: fnConcat, MinArg: 2, MaxArg: -1})
@@ -4148,10 +4147,8 @@ func init() {
 		}
 		for _, itm := range args[0] {
 			sv := itemStringvalue(itm)
-			for _, part := range strings.Fields(sv) {
-				if part == token {
-					return Sequence{true}, nil
-				}
+			if slices.Contains(strings.Fields(sv), token) {
+				return Sequence{true}, nil
 			}
 		}
 		return Sequence{false}, nil
@@ -4504,9 +4501,11 @@ func init() {
 			cleaned = strings.TrimSpace(cleaned[idx+1:])
 		} else {
 			// Try removing day name without comma
-			days := []string{"Monday ", "Tuesday ", "Wednesday ", "Thursday ",
+			days := []string{
+				"Monday ", "Tuesday ", "Wednesday ", "Thursday ",
 				"Friday ", "Saturday ", "Sunday ",
-				"Mon ", "Tue ", "Wed ", "Thu ", "Fri ", "Sat ", "Sun "}
+				"Mon ", "Tue ", "Wed ", "Thu ", "Fri ", "Sat ", "Sun ",
+			}
 			for _, d := range days {
 				if strings.HasPrefix(cleaned, d) {
 					cleaned = cleaned[len(d):]
@@ -4621,12 +4620,9 @@ func init() {
 		if !ok {
 			return nil, NewXPathError("XPTY0004", "third argument must be a function")
 		}
-		minLen := len(seq1)
-		if len(seq2) < minLen {
-			minLen = len(seq2)
-		}
+		minLen := min(len(seq2), len(seq1))
 		var result Sequence
-		for i := 0; i < minLen; i++ {
+		for i := range minLen {
 			r, err := fn.Call(ctx, []Sequence{{seq1[i]}, {seq2[i]}})
 			if err != nil {
 				return nil, err

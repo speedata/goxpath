@@ -80,7 +80,7 @@ func (tt tokenType) String() string {
 }
 
 type token struct {
-	Value interface{}
+	Value any
 	Typ   tokenType
 }
 
@@ -267,7 +267,7 @@ func (tl *Tokenlist) skipNCName(name string) error {
 // - IntegerLiteral (digits only) → int
 // - DecimalLiteral (digits with '.') → XSDecimal
 // - DoubleLiteral (has 'e'/'E') → XSDouble
-func getNum(sr *strings.Reader) interface{} {
+func getNum(sr *strings.Reader) any {
 	var buf []byte
 	hasExp := false
 	hasDot := false
@@ -309,7 +309,7 @@ func getNum(sr *strings.Reader) interface{} {
 }
 
 // getNumWithPrefix parses a number literal starting with a given prefix (e.g., ".").
-func getNumWithPrefix(prefix string, sr *strings.Reader) interface{} {
+func getNumWithPrefix(prefix string, sr *strings.Reader) any {
 	var buf []byte
 	buf = append(buf, []byte(prefix)...)
 	hasExp := false

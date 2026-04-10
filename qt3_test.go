@@ -2,6 +2,7 @@ package goxpath
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -57,7 +58,6 @@ func TestQT3Survey(t *testing.T) {
 
 		fullPath := filepath.Join(qt3Dir, tsFile)
 		sr := runQT3SetInProcess(fullPath, globalEnvs)
-		sr.Name = tsName
 
 		totalPass += sr.Pass
 		totalFail += sr.Fail
@@ -106,7 +106,7 @@ func TestQT3Survey(t *testing.T) {
 	}
 
 	baselineTests := make(map[string]bool)
-	for _, line := range strings.Split(string(baselineData), "\n") {
+	for line := range strings.SplitSeq(string(baselineData), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			baselineTests[line] = true
@@ -150,10 +150,10 @@ func TestQT3Survey(t *testing.T) {
 
 // runQT3SetInProcess runs a single QT3 test set in-process with panic recovery.
 type qt3SetResult struct {
-	Name                          string
+	Name                           string
 	Total, Pass, Fail, Panic, Skip int
-	Passed                        []string // names of passing tests
-	Failed                        []string // names of failing tests
+	Passed                         []string // names of passing tests
+	Failed                         []string // names of failing tests
 }
 
 func runQT3SetInProcess(setFile string, globalEnvs map[string]*qt3Env) (sr qt3SetResult) {
@@ -300,7 +300,6 @@ func TestQT3OneSet(t *testing.T) {
 			continue
 		}
 
-
 		// Get expected result
 		var resultElt *goxml.Element
 		for _, tc := range elt.Children() {
@@ -329,11 +328,11 @@ func TestQT3OneSet(t *testing.T) {
 // ---------- Environment handling ----------
 
 type qt3Env struct {
-	sourceFile     string                     // XML source file for context item
-	sourceXML      string                     // inline XML content
-	namespaces     map[string]string          // prefix → URI
-	decimalFormats map[string]*DecimalFormat   // named decimal formats
-	params     map[string]string // variable name → select expression
+	sourceFile     string                    // XML source file for context item
+	sourceXML      string                    // inline XML content
+	namespaces     map[string]string         // prefix → URI
+	decimalFormats map[string]*DecimalFormat // named decimal formats
+	params         map[string]string         // variable name → select expression
 }
 
 func parseEnvironments(root *goxml.Element, baseDir string) map[string]*qt3Env {
@@ -660,9 +659,7 @@ func runQT3Test(expr string, env *qt3Env, resultElt *goxml.Element) error {
 
 	// Set namespaces
 	if env != nil {
-		for pfx, uri := range env.namespaces {
-			xp.Ctx.Namespaces[pfx] = uri
-		}
+		maps.Copy(xp.Ctx.Namespaces, env.namespaces)
 	}
 
 	// Set params as variables
@@ -894,4 +891,3 @@ func attrVal(elt *goxml.Element, name string) string {
 	}
 	return ""
 }
-

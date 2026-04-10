@@ -23,23 +23,18 @@ var ErrSequence = fmt.Errorf("a sequence with more than one item is not allowed 
 
 // Context is needed for variables, namespaces and XML navigation.
 type Context struct {
-	Namespaces   map[string]string           // Storage for (private) name spaces
-	Store        map[interface{}]interface{} // Store can be used for private variables accessible in functions
-	Pos          int                         // Used to determine the position() in the sequence
-	vars         map[string]Sequence
-	sequence     Sequence
-	currentItem  Item // XSLT current() item — stable across predicate evaluation
-	ctxPositions []int
-	ctxLengths   []int
-	size         int
+	Namespaces     map[string]string // Storage for (private) name spaces
+	Store          map[any]any       // Store can be used for private variables accessible in functions
+	Pos            int               // Used to determine the position() in the sequence
+	vars           map[string]Sequence
+	sequence       Sequence
+	currentItem    Item // XSLT current() item — stable across predicate evaluation
+	ctxPositions   []int
+	ctxLengths     []int
+	size           int
 	xmldoc         *goxml.XMLDocument
 	decimalFormats map[string]*DecimalFormat
 	currentTime    *time.Time // cached per-evaluation, set on first access
-}
-
-type rName struct {
-	uri       string
-	localName string
 }
 
 // CurrentTime returns the stable current time for this evaluation.
@@ -158,9 +153,11 @@ func (ctx *Context) Root() (Sequence, error) {
 	return ctx.sequence, err
 }
 
-type testFunc func(*Context, Item) bool
-type testfuncChildren func(*goxml.Element) bool
-type testfuncAttributes func(*goxml.Attribute) bool
+type (
+	testFunc           func(*Context, Item) bool
+	testfuncChildren   func(*goxml.Element) bool
+	testfuncAttributes func(*goxml.Attribute) bool
+)
 
 // Current returns all elements in the context that satisfy the testfunc.
 func (ctx *Context) Current(tf testfuncChildren) (Sequence, error) {
@@ -260,9 +257,9 @@ func returnAttributeNameTest(name string) func(*Context, Item) bool {
 // returnElementEQNameTest creates a test function for element(Q{namespace}localname).
 // The eqname format is "namespace}localname".
 func returnElementEQNameTest(eqname string) func(*Context, Item) bool {
-	idx := strings.Index(eqname, "}")
-	ns := eqname[:idx]
-	localName := eqname[idx+1:]
+	before, after, _ := strings.Cut(eqname, "}")
+	ns := before
+	localName := after
 	return func(ctx *Context, itm Item) bool {
 		if elt, ok := itm.(*goxml.Element); ok {
 			if elt.Name != localName {
@@ -312,7 +309,7 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 		n := len(ctx.sequence)
 		positions = make([]int, n)
 		lengths = make([]int, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			positions[i] = i + 1
 			lengths[i] = n
 		}
@@ -371,7 +368,7 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 }
 
 // An Item can hold anything such as a number, a string or a node.
-type Item interface{}
+type Item any
 
 // ItemStringvalue returns the string value of an individual item.
 func ItemStringvalue(itm Item) string {
@@ -879,7 +876,7 @@ const (
 	xBoolean
 )
 
-func compareFunc(op string, a, b interface{}) (bool, error) {
+func compareFunc(op string, a, b any) (bool, error) {
 	var floatLeft, floatRight float64
 	var intLeft, intRight int
 	var stringLeft, stringRight string
@@ -1157,7 +1154,7 @@ func compareFunc(op string, a, b interface{}) (bool, error) {
 
 // toBoolForCompare converts a non-boolean operand to bool for general comparison.
 // XPath spec: number != 0 is true, non-empty string is true.
-func toBoolForCompare(v interface{}, dt datatype, floatVal float64, intVal int, stringVal string) bool {
+func toBoolForCompare(v any, dt datatype, floatVal float64, intVal int, stringVal string) bool {
 	switch dt {
 	case xDouble:
 		return floatVal != 0 && !math.IsNaN(floatVal)
@@ -2314,11 +2311,16 @@ func parseMultiplicativeExpr(tl *Tokenlist) (EvalFunc, error) {
 				sum *= flt
 				resultType = opType
 			case "div":
-				sum /= flt
 				// div always produces at least decimal
 				if opType < NumDecimal {
 					opType = NumDecimal
 				}
+				// Division by zero raises FOAR0001 for integer/decimal operands.
+				// For float/double, Go produces ±Inf which is correct per spec.
+				if flt == 0 && opType <= NumDecimal {
+					return nil, NewXPathError("FOAR0001", "division by zero")
+				}
+				sum /= flt
 				resultType = opType
 			case "idiv":
 				if flt == 0 {
@@ -2673,9 +2675,9 @@ func parseCastableExpr(tl *Tokenlist) (EvalFunc, error) {
 			// Try the actual cast — if it succeeds, castable is true
 			castPrefix := ""
 			castLocal := typName
-			if idx := strings.Index(typName, ":"); idx >= 0 {
-				castPrefix = typName[:idx]
-				castLocal = typName[idx+1:]
+			if before, after, ok0 := strings.Cut(typName, ":"); ok0 {
+				castPrefix = before
+				castLocal = after
 			}
 			castNS := nsFN
 			if castPrefix != "" {
@@ -2816,9 +2818,9 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 				// Try calling the XSD constructor function
 				castPrefix := ""
 				castLocal := typName
-				if idx := strings.Index(typName, ":"); idx >= 0 {
-					castPrefix = typName[:idx]
-					castLocal = typName[idx+1:]
+				if before, after, ok := strings.Cut(typName, ":"); ok {
+					castPrefix = before
+					castLocal = after
 				}
 				castNS := nsFN
 				if castPrefix != "" {
@@ -2911,9 +2913,9 @@ func parseArrowExpr(tl *Tokenlist) (EvalFunc, error) {
 			// Resolve function name and call
 			fnPrefix := ""
 			fnLocalName := capturedName
-			if idx := strings.Index(capturedName, ":"); idx >= 0 {
-				fnPrefix = capturedName[:idx]
-				fnLocalName = capturedName[idx+1:]
+			if before, after, ok := strings.Cut(capturedName, ":"); ok {
+				fnPrefix = before
+				fnLocalName = after
 			}
 			return callFunctionResolved(fnPrefix, fnLocalName, allArgs, ctx)
 		}
@@ -3419,7 +3421,9 @@ func parseNodeTest(tl *Tokenlist) (testFunc, error) {
 	var tf testFunc
 	var err error
 	if str, found := tl.readNexttokIfIsOneOfValueAndType(kindTestStrings, tokQName); found {
-		if err = tl.skipType(tokOpenParen); err != nil {
+		if !tl.nexttokIsTyp(tokOpenParen) {
+			tl.unread() // unread the kindTest name (e.g. "text")
+		} else if err = tl.skipType(tokOpenParen); err != nil {
 			tl.unread()
 		} else {
 			tl.unread()
@@ -3503,7 +3507,6 @@ func parseWildCard(tl *Tokenlist) (testFunc, error) {
 					return false
 				}
 			}
-
 		} else {
 			tl.unread()
 		}
@@ -3926,22 +3929,16 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		ef = func(ctx *Context) (Sequence, error) {
 			// Capture current variable scope for closure
 			closureVars := make(map[string]Sequence, len(ctx.vars))
-			for k, v := range ctx.vars {
-				closureVars[k] = v
-			}
+			maps.Copy(closureVars, ctx.vars)
 			fnRef := &XPathFunction{
 				Name:  "(anonymous)",
 				Arity: len(capturedParams),
 				Fn: func(callCtx *Context, args []Sequence) (Sequence, error) {
 					// Save current vars
 					savedVars := make(map[string]Sequence, len(callCtx.vars))
-					for k, v := range callCtx.vars {
-						savedVars[k] = v
-					}
+					maps.Copy(savedVars, callCtx.vars)
 					// Apply closure vars
-					for k, v := range closureVars {
-						callCtx.vars[k] = v
-					}
+					maps.Copy(callCtx.vars, closureVars)
 					// Bind parameters
 					for i, name := range capturedParams {
 						if i < len(args) {
@@ -3951,9 +3948,7 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 					result, err := bodyEf(callCtx)
 					// Restore vars
 					clear(callCtx.vars)
-					for k, v := range savedVars {
-						callCtx.vars[k] = v
-					}
+					maps.Copy(callCtx.vars, savedVars)
 					return result, err
 				},
 			}
@@ -4011,15 +4006,15 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 		var capturedNS, capturedLocal, capturedPrefix string
 		if nexttok.Typ == tokEQName {
 			// URIQualifiedName: "namespace}localname"
-			if idx := strings.Index(fnFullName, "}"); idx >= 0 {
-				capturedNS = fnFullName[:idx]
-				capturedLocal = fnFullName[idx+1:]
+			if before, after, ok := strings.Cut(fnFullName, "}"); ok {
+				capturedNS = before
+				capturedLocal = after
 			}
 		} else {
 			capturedLocal = fnFullName
-			if idx := strings.Index(fnFullName, ":"); idx >= 0 {
-				capturedPrefix = fnFullName[:idx]
-				capturedLocal = fnFullName[idx+1:]
+			if before, after, ok := strings.Cut(fnFullName, ":"); ok {
+				capturedPrefix = before
+				capturedLocal = after
 			}
 		}
 		capturedArity := arity
@@ -4125,13 +4120,13 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	var fnPrefix, fnLocalName string
 	var fnDirectNS string // set for EQName (Q{ns}local)
 	if functionNameToken.Typ == tokEQName {
-		if idx := strings.Index(fn, "}"); idx >= 0 {
-			fnDirectNS = fn[:idx]
-			fnLocalName = fn[idx+1:]
+		if before, after, ok0 := strings.Cut(fn, "}"); ok0 {
+			fnDirectNS = before
+			fnLocalName = after
 		}
-	} else if idx := strings.IndexByte(fn, ':'); idx >= 0 {
-		fnPrefix = fn[:idx]
-		fnLocalName = fn[idx+1:]
+	} else if before, after, ok0 := strings.Cut(fn, ":"); ok0 {
+		fnPrefix = before
+		fnLocalName = after
 	} else {
 		fnLocalName = fn
 	}
@@ -4180,7 +4175,10 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	ef = func(ctx *Context) (Sequence, error) {
 		var arguments []Sequence
 		saveContext := ctx.GetContextSequence()
-		for _, es := range efs {
+		for i, es := range efs {
+			if es == nil {
+				return nil, fmt.Errorf("internal error: nil EvalFunc for argument %d of function %s:%s", i, fnPrefix, fnLocalName)
+			}
 			seq, err := es(ctx)
 			if err != nil {
 				return nil, err

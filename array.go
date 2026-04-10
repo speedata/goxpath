@@ -93,10 +93,10 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		s := int(start) - 1 // 1-based to 0-based
-		if s < 0 {
-			s = 0
-		}
+		s := max(
+			// 1-based to 0-based
+			int(start)-1, 0)
+
 		length := len(arr.Members) - s
 		if len(args) > 2 {
 			l, err := NumberValue(args[2])
@@ -105,10 +105,7 @@ func init() {
 			}
 			length = int(l)
 		}
-		end := s + length
-		if end > len(arr.Members) {
-			end = len(arr.Members)
-		}
+		end := min(s+length, len(arr.Members))
 		if s >= len(arr.Members) || end <= s {
 			return Sequence{&XPathArray{}}, nil
 		}
@@ -141,13 +138,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		idx := int(pos) - 1
-		if idx < 0 {
-			idx = 0
-		}
-		if idx > len(arr.Members) {
-			idx = len(arr.Members)
-		}
+		idx := min(max(int(pos)-1, 0), len(arr.Members))
 		newMembers := make([]Sequence, 0, len(arr.Members)+1)
 		newMembers = append(newMembers, arr.Members[:idx]...)
 		newMembers = append(newMembers, args[2])

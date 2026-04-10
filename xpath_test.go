@@ -581,7 +581,7 @@ func TestNSEval(t *testing.T) {
 
 // itemsEqual compares two items, treating numeric values as equal if they
 // have the same numeric value regardless of Go type (int vs float64 vs XSDouble etc.)
-func itemsEqual(a, b interface{}) bool {
+func itemsEqual(a, b any) bool {
 	if a == b {
 		return true
 	}
