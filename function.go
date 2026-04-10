@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -22,7 +23,18 @@ import (
 var (
 	xpathfunctions   = make(map[string]*Function)
 	multipleWSRegexp *regexp.Regexp
+
+	// xpathRegexCache memoizes compileXPathRegex results so that
+	// repeated calls with the same pattern/flags (typical inside a
+	// loop or XSLT for-each) avoid re-translating and re-compiling
+	// the regex on every iteration.
+	xpathRegexCache sync.Map // key: "flags:pattern" → cachedRegex
 )
+
+type cachedRegex struct {
+	re  *regexp.Regexp
+	err error
+}
 
 // XSDate is a date instance
 type XSDate time.Time
@@ -2505,6 +2517,17 @@ func removeCharClassSubtraction(pattern string) string {
 // compileXPathRegex compiles an XPath regular expression, translating XPath-specific
 // syntax to Go regexp syntax first.
 func compileXPathRegex(pattern string, flags string) (*regexp.Regexp, error) {
+	cacheKey := flags + "\x00" + pattern
+	if v, ok := xpathRegexCache.Load(cacheKey); ok {
+		c := v.(cachedRegex)
+		return c.re, c.err
+	}
+	re, err := compileXPathRegexUncached(pattern, flags)
+	xpathRegexCache.Store(cacheKey, cachedRegex{re: re, err: err})
+	return re, err
+}
+
+func compileXPathRegexUncached(pattern string, flags string) (*regexp.Regexp, error) {
 	goPattern := xpathRegexToGo(pattern)
 
 	// Handle XPath flags
