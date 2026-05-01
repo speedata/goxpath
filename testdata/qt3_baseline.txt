@@ -13191,9 +13191,6 @@ prod-AxisStep.preceding/preceding-3
 prod-AxisStep.preceding/preceding-4
 prod-AxisStep.preceding/preceding-8
 prod-AxisStep.preceding/preceding-9
-prod-AxisStep.static-typing/ST-Axes007
-prod-AxisStep.static-typing/ST-Axes008
-prod-AxisStep.static-typing/ST-Axes009
 prod-AxisStep.static-typing/ST-Axes010
 prod-AxisStep.unabbr/unabbreviatedSyntax-1
 prod-AxisStep.unabbr/unabbreviatedSyntax-12
@@ -13286,6 +13283,7 @@ prod-AxisStep/Axes036-1
 prod-AxisStep/Axes036-2
 prod-AxisStep/Axes037-1
 prod-AxisStep/Axes037-2
+prod-AxisStep/Axes041-1
 prod-AxisStep/Axes043-1
 prod-AxisStep/Axes044-1
 prod-AxisStep/Axes044-2

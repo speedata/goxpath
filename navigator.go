@@ -41,6 +41,12 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 			// PI nodes have no children.
 		case goxml.NamespaceNode:
 			// Namespace nodes have no children.
+		case *goxml.Attribute:
+			// Attributes have no children. Without this case the
+			// switch falls through to the default branch when an
+			// attribute name happens to collide with a reserved
+			// keyword (e.g. @float, @int) and the parser routes the
+			// step through the child axis.
 		case Sequence:
 			for _, itm := range t {
 				if tf(ctx, itm) {
@@ -104,6 +110,13 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 				seq = append(seq, t)
 			}
 		case goxml.NamespaceNode:
+			if tf(ctx, t) {
+				seq = append(seq, t)
+			}
+		case *goxml.Attribute:
+			// Attributes have no descendants; the descendant-or-self
+			// axis returns just the attribute itself if it passes
+			// the node test.
 			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
@@ -173,6 +186,9 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 			if tf(ctx, t) {
 				seq = append(seq, t)
 			}
+		case *goxml.Attribute:
+			// Attributes have no descendants; the descendant axis
+			// (which excludes self) returns the empty sequence.
 		case Sequence:
 			for _, itm := range t {
 				if tf(ctx, itm) {
