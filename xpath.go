@@ -35,6 +35,19 @@ type Context struct {
 	xmldoc         *goxml.XMLDocument
 	decimalFormats map[string]*DecimalFormat
 	currentTime    *time.Time // cached per-evaluation, set on first access
+	// DefaultCollation is the static default collation, used by string operators
+	// and by string functions when no explicit collation argument is supplied.
+	// If nil, the Unicode codepoint collation is used.
+	DefaultCollation Collation
+}
+
+// Collation returns the static default collation, falling back to the
+// Unicode codepoint collation if none is set.
+func (ctx *Context) Collation() Collation {
+	if ctx.DefaultCollation != nil {
+		return ctx.DefaultCollation
+	}
+	return CodepointCollation()
 }
 
 // CurrentTime returns the stable current time for this evaluation.
@@ -74,8 +87,9 @@ func CopyContext(cur *Context) *Context {
 		sequence:     cur.sequence,
 		currentItem:  cur.currentItem,
 		Pos:          cur.Pos,
-		ctxLengths:   slices.Clone(cur.ctxLengths),
-		ctxPositions: slices.Clone(cur.ctxPositions),
+		ctxLengths:       slices.Clone(cur.ctxLengths),
+		ctxPositions:     slices.Clone(cur.ctxPositions),
+		DefaultCollation: cur.DefaultCollation,
 	}
 	return ctx
 }
@@ -98,6 +112,7 @@ func (ctx *Context) ResetFrom(src *Context) {
 	maps.Copy(ctx.Store, src.Store)
 	ctx.ctxLengths = append(ctx.ctxLengths[:0], src.ctxLengths...)
 	ctx.ctxPositions = append(ctx.ctxPositions[:0], src.ctxPositions...)
+	ctx.DefaultCollation = src.DefaultCollation
 }
 
 // SetContextSequence sets the context sequence and returns the previous one.

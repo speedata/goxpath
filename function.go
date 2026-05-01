@@ -234,7 +234,15 @@ func fnCompare(ctx *Context, args []Sequence) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Sequence{strings.Compare(firstarg, secondarg)}, nil
+	var coll Collation
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	} else {
+		coll = ctx.Collation()
+	}
+	return Sequence{coll.Compare(firstarg, secondarg)}, nil
 }
 
 func fnConcat(ctx *Context, args []Sequence) (Sequence, error) {
@@ -266,8 +274,13 @@ func fnContains(ctx *Context, args []Sequence) (Sequence, error) {
 	if testText, err = StringValue(testSeq); err != nil {
 		return nil, err
 	}
-
-	return Sequence{strings.Contains(inputText, testText)}, nil
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
+	return Sequence{coll.Contains(inputText, testText)}, nil
 }
 
 func fnCount(ctx *Context, args []Sequence) (Sequence, error) {
@@ -292,6 +305,13 @@ func fnDistinctValues(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(arg) == 0 {
 		return Sequence{}, nil
 	}
+	coll := ctx.Collation()
+	if len(args) > 1 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[1]); err != nil {
+			return nil, err
+		}
+	}
 	seen := make(map[any]bool)
 	seenNaN := false
 	result := Sequence{}
@@ -299,11 +319,21 @@ func fnDistinctValues(ctx *Context, args []Sequence) (Sequence, error) {
 		// Convert to comparable value, normalizing numeric types so that
 		// e.g. XSInteger{134}, XSDecimal(134), and XSDouble(134) are equal.
 		var key any
+		isString := false
 		switch v := itm.(type) {
 		case *goxml.Attribute:
 			key = v.Value
+			isString = true
 		case *goxml.Element:
-			key, _ = StringValue(Sequence{v})
+			sv, _ := StringValue(Sequence{v})
+			key = sv
+			isString = true
+		case string:
+			key = v
+			isString = true
+		case XSString:
+			key = v.V
+			isString = true
 		default:
 			if f, ok := ToFloat64(itm); ok {
 				if math.IsNaN(f) {
@@ -318,6 +348,11 @@ func fnDistinctValues(ctx *Context, args []Sequence) (Sequence, error) {
 			} else {
 				key = itm
 			}
+		}
+		if isString {
+			// Use the collation's hash key so that collation-equal strings
+			// collapse to a single bucket.
+			key = "\x00s" + coll.Key(key.(string))
 		}
 		if !seen[key] {
 			seen[key] = true
@@ -766,6 +801,86 @@ func fnYearFromDateTime(ctx *Context, args []Sequence) (Sequence, error) {
 	return Sequence{t.Year()}, nil
 }
 
+// deepEqualItemsColl is the collation-aware variant of deepEqualItems.
+// String-typed items (and string values of attributes/text nodes) are compared
+// under the supplied collation.
+func deepEqualItemsColl(a, b Item, coll Collation) bool {
+	if coll == nil || coll.URI() == CodepointCollationURI {
+		return deepEqualItems(a, b)
+	}
+	// Strings: compare under the collation.
+	asStr := func(v Item) (string, bool) {
+		switch t := v.(type) {
+		case string:
+			return t, true
+		case XSString:
+			return t.V, true
+		}
+		return "", false
+	}
+	if sa, ok := asStr(a); ok {
+		if sb, ok := asStr(b); ok {
+			return coll.Equal(sa, sb)
+		}
+		return false
+	}
+	// Attributes: compare value under the collation, name as before.
+	if av, ok := a.(*goxml.Attribute); ok {
+		if bv, ok := b.(*goxml.Attribute); ok {
+			return av.Name == bv.Name && coll.Equal(av.Value, bv.Value)
+		}
+		return false
+	}
+	// Elements: structural compare with collation-aware children.
+	if av, ok := a.(*goxml.Element); ok {
+		bv, ok := b.(*goxml.Element)
+		if !ok {
+			return false
+		}
+		if av.Name != bv.Name || av.Prefix != bv.Prefix {
+			return false
+		}
+		aAttrs := av.Attributes()
+		bAttrs := bv.Attributes()
+		if len(aAttrs) != len(bAttrs) {
+			return false
+		}
+		for _, aa := range aAttrs {
+			found := false
+			for _, ba := range bAttrs {
+				if aa.Name == ba.Name && aa.Namespace == ba.Namespace {
+					if !coll.Equal(aa.Value, ba.Value) {
+						return false
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		aChildren := av.Children()
+		bChildren := bv.Children()
+		if len(aChildren) != len(bChildren) {
+			return false
+		}
+		for i := range aChildren {
+			if !deepEqualItemsColl(aChildren[i], bChildren[i], coll) {
+				return false
+			}
+		}
+		return true
+	}
+	if av, ok := a.(goxml.CharData); ok {
+		if bv, ok := b.(goxml.CharData); ok {
+			return coll.Equal(av.Contents, bv.Contents)
+		}
+		return false
+	}
+	return deepEqualItems(a, b)
+}
+
 func deepEqualItems(a, b Item) bool {
 	switch av := a.(type) {
 	case *goxml.Element:
@@ -884,8 +999,15 @@ func fnDeepEqual(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(a) != len(b) {
 		return Sequence{false}, nil
 	}
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
 	for i := range a {
-		if !deepEqualItems(a[i], b[i]) {
+		if !deepEqualItemsColl(a[i], b[i], coll) {
 			return Sequence{false}, nil
 		}
 	}
@@ -998,7 +1120,13 @@ func fnEndsWith(ctx *Context, args []Sequence) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Sequence{strings.HasSuffix(firstarg, secondarg)}, nil
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
+	return Sequence{coll.EndsWith(firstarg, secondarg)}, nil
 }
 
 func fnFalse(ctx *Context, args []Sequence) (Sequence, error) {
@@ -2003,7 +2131,45 @@ func fnIndexOf(ctx *Context, args []Sequence) (Sequence, error) {
 	}
 	searchVal := search[0]
 
-	// Convert search value to comparable form
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
+
+	// asPlainString reports whether v is a plain string-typed atomic value.
+	// Numeric/decimal/double wrappers do not count.
+	asPlainString := func(v Item) (string, bool) {
+		switch t := v.(type) {
+		case string:
+			return t, true
+		case XSString:
+			return t.V, true
+		}
+		return "", false
+	}
+	// asAtomizedString reports whether v atomizes to a string value.
+	// Used for nodes (which yield string values via atomization), in addition
+	// to plain string atoms.
+	asAtomizedString := func(v Item) (string, bool) {
+		if s, ok := asPlainString(v); ok {
+			return s, true
+		}
+		switch t := v.(type) {
+		case *goxml.Attribute:
+			return t.Value, true
+		case *goxml.Element:
+			sv, _ := StringValue(Sequence{t})
+			return sv, true
+		}
+		return "", false
+	}
+
+	searchStr, searchIsString := asAtomizedString(searchVal)
+
+	// Convert search value to comparable form (legacy path for non-strings)
 	var searchKey any
 	switch v := searchVal.(type) {
 	case *goxml.Attribute:
@@ -2017,6 +2183,12 @@ func fnIndexOf(ctx *Context, args []Sequence) (Sequence, error) {
 
 	result := Sequence{}
 	for i, itm := range seq {
+		if searchIsString {
+			if s, ok := asAtomizedString(itm); ok && coll.Equal(s, searchStr) {
+				result = append(result, i+1)
+			}
+			continue
+		}
 		var itmKey any
 		switch v := itm.(type) {
 		case *goxml.Attribute:
@@ -2027,9 +2199,8 @@ func fnIndexOf(ctx *Context, args []Sequence) (Sequence, error) {
 			sv, _ := StringValue(Sequence{itm})
 			itmKey = sv
 		}
-
 		if itmKey == searchKey {
-			result = append(result, i+1) // XPath uses 1-based indexing
+			result = append(result, i+1)
 		}
 	}
 	return result, nil
@@ -2640,6 +2811,13 @@ func fnMax(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(arg) == 0 {
 		return Sequence{}, nil
 	}
+	coll := ctx.Collation()
+	if len(args) > 1 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[1]); err != nil {
+			return nil, err
+		}
+	}
 	// Cast xs:untypedAtomic to xs:double (raises FORG0001 on failure)
 	var err error
 	if arg, err = castUntypedToDouble(arg); err != nil {
@@ -2652,7 +2830,7 @@ func fnMax(ctx *Context, args []Sequence) (Sequence, error) {
 		m := itemStringvalue(arg[0])
 		for i := 1; i < len(arg); i++ {
 			s := itemStringvalue(arg[i])
-			if s > m {
+			if coll.Compare(s, m) > 0 {
 				m = s
 			}
 		}
@@ -2679,6 +2857,13 @@ func fnMin(ctx *Context, args []Sequence) (Sequence, error) {
 	if len(arg) == 0 {
 		return Sequence{}, nil
 	}
+	coll := ctx.Collation()
+	if len(args) > 1 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[1]); err != nil {
+			return nil, err
+		}
+	}
 	// Cast xs:untypedAtomic to xs:double (raises FORG0001 on failure)
 	var err error
 	if arg, err = castUntypedToDouble(arg); err != nil {
@@ -2693,7 +2878,7 @@ func fnMin(ctx *Context, args []Sequence) (Sequence, error) {
 		m := itemStringvalue(arg[0])
 		for i := 1; i < len(arg); i++ {
 			s := itemStringvalue(arg[i])
-			if s < m {
+			if coll.Compare(s, m) < 0 {
 				m = s
 			}
 		}
@@ -3094,7 +3279,13 @@ func fnStartsWith(ctx *Context, args []Sequence) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Sequence{strings.HasPrefix(firstarg, secondarg)}, nil
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
+	return Sequence{coll.StartsWith(firstarg, secondarg)}, nil
 }
 
 func fnStringJoin(ctx *Context, args []Sequence) (Sequence, error) {
@@ -3199,9 +3390,13 @@ func fnSubstringAfter(ctx *Context, args []Sequence) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, after, _ := strings.Cut(firstarg, secondarg)
-
-	return Sequence{after}, nil
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
+	}
+	return Sequence{coll.SubstringAfter(firstarg, secondarg)}, nil
 }
 
 func fnSubstringBefore(ctx *Context, args []Sequence) (Sequence, error) {
@@ -3213,11 +3408,13 @@ func fnSubstringBefore(ctx *Context, args []Sequence) (Sequence, error) {
 	if err != nil {
 		return nil, err
 	}
-	before, _, found := strings.Cut(firstarg, secondarg)
-	if !found {
-		return Sequence{""}, nil
+	coll := ctx.Collation()
+	if len(args) > 2 {
+		if coll, err = collationFromArg(ctx, args[2]); err != nil {
+			return nil, err
+		}
 	}
-	return Sequence{before}, nil
+	return Sequence{coll.SubstringBefore(firstarg, secondarg)}, nil
 }
 
 func fnSubsequence(ctx *Context, args []Sequence) (Sequence, error) {
@@ -3961,6 +4158,14 @@ func fnSort(ctx *Context, args []Sequence) (Sequence, error) {
 		return seq, nil
 	}
 
+	coll := ctx.Collation()
+	if len(args) >= 2 && len(args[1]) > 0 {
+		var err error
+		if coll, err = collationFromArg(ctx, args[1]); err != nil {
+			return nil, err
+		}
+	}
+
 	// Get key function if provided (3rd argument)
 	var keyFn *XPathFunction
 	if len(args) >= 3 && len(args[2]) > 0 {
@@ -4003,10 +4208,10 @@ func fnSort(ctx *Context, args []Sequence) (Sequence, error) {
 				return na < nb
 			}
 		}
-		// String comparison fallback
+		// String comparison fallback (collation-aware)
 		sa := itemStringvalue(a[0])
 		sb := itemStringvalue(b[0])
-		return sa < sb
+		return coll.Compare(sa, sb) < 0
 	})
 
 	result := make(Sequence, len(entries))
@@ -4137,6 +4342,28 @@ func init() {
 	RegisterFunction(&Function{Name: "ceiling", Namespace: nsFN, F: fnCeiling, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "codepoint-equal", Namespace: nsFN, F: fnCodepointEqual, MinArg: 2, MaxArg: 2})
 	RegisterFunction(&Function{Name: "codepoints-to-string", Namespace: nsFN, F: fnCodepointsToString, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "collation-key", Namespace: nsFN, F: func(ctx *Context, args []Sequence) (Sequence, error) {
+		if len(args[0]) != 1 {
+			return nil, NewXPathError("XPTY0004", "fn:collation-key: expected single string argument")
+		}
+		var s string
+		switch v := args[0][0].(type) {
+		case string:
+			s = v
+		case XSString:
+			s = v.V
+		default:
+			return nil, NewXPathError("XPTY0004", "fn:collation-key: argument must be xs:string")
+		}
+		coll := ctx.Collation()
+		if len(args) > 1 {
+			var err error
+			if coll, err = collationFromArg(ctx, args[1]); err != nil {
+				return nil, err
+			}
+		}
+		return Sequence{XSBase64Binary([]byte(coll.Key(s)))}, nil
+	}, MinArg: 1, MaxArg: 2})
 	RegisterFunction(&Function{Name: "compare", Namespace: nsFN, F: fnCompare, MinArg: 2, MaxArg: 3})
 	RegisterFunction(&Function{Name: "apply", Namespace: nsFN, F: func(ctx *Context, args []Sequence) (Sequence, error) {
 		if len(args[0]) != 1 {
@@ -4168,10 +4395,18 @@ func init() {
 		if token == "" {
 			return Sequence{false}, nil
 		}
+		coll := ctx.Collation()
+		if len(args) > 2 {
+			if coll, err = collationFromArg(ctx, args[2]); err != nil {
+				return nil, err
+			}
+		}
 		for _, itm := range args[0] {
 			sv := itemStringvalue(itm)
-			if slices.Contains(strings.Fields(sv), token) {
-				return Sequence{true}, nil
+			for _, f := range strings.Fields(sv) {
+				if coll.Equal(f, token) {
+					return Sequence{true}, nil
+				}
 			}
 		}
 		return Sequence{false}, nil
@@ -4338,8 +4573,8 @@ func init() {
 	RegisterFunction(&Function{Name: "local-name-from-QName", Namespace: nsFN, F: fnLocalNameFromQName, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "lower-case", Namespace: nsFN, F: fnLowercase, MinArg: 1, MaxArg: 1})
 	RegisterFunction(&Function{Name: "matches", Namespace: nsFN, F: fnMatches, MinArg: 2, MaxArg: 3})
-	RegisterFunction(&Function{Name: "max", Namespace: nsFN, F: fnMax, MinArg: 1, MaxArg: 1})
-	RegisterFunction(&Function{Name: "min", Namespace: nsFN, F: fnMin, MinArg: 1, MaxArg: 1})
+	RegisterFunction(&Function{Name: "max", Namespace: nsFN, F: fnMax, MinArg: 1, MaxArg: 2})
+	RegisterFunction(&Function{Name: "min", Namespace: nsFN, F: fnMin, MinArg: 1, MaxArg: 2})
 	RegisterFunction(&Function{Name: "name", Namespace: nsFN, F: fnName, MaxArg: 1})
 	RegisterFunction(&Function{Name: "nilled", Namespace: nsFN, F: fnNilled, MaxArg: 1})
 	RegisterFunction(&Function{Name: "node-name", Namespace: nsFN, F: fnNodeName, MaxArg: 1})
@@ -4673,7 +4908,7 @@ func init() {
 		return Sequence{XSDateTime(combined)}, nil
 	}, MinArg: 2, MaxArg: 2})
 	RegisterFunction(&Function{Name: "default-collation", Namespace: nsFN, F: func(ctx *Context, args []Sequence) (Sequence, error) {
-		return Sequence{"http://www.w3.org/2005/xpath-functions/collation/codepoint"}, nil
+		return Sequence{ctx.Collation().URI()}, nil
 	}})
 	RegisterFunction(&Function{Name: "error", Namespace: nsFN, F: func(ctx *Context, args []Sequence) (Sequence, error) {
 		code := "FOER0000"

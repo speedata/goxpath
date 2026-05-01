@@ -39,11 +39,11 @@ The test suite compares each run against `testdata/qt3_baseline.txt` (~19,000 te
 ## Known Limitations
 
 - **Regex back-references** (`\1`, `\2`) are not supported (Go RE2 engine limitation)
-- **Unicode Collation Algorithm** (UCA) is not implemented; collation-aware functions use codepoint comparison
+- **Unicode Collation Algorithm** (UCA): supported via `golang.org/x/text/collate`. `lang`, `strength`, `numeric` and `fallback` parameters are honored; `caseFirst`, `caseLevel`, `alternate`, `maxVariable`, `reorder`, `backwards`, `version`, `normalization` are accepted lax but not effectively applied (raise `FOCH0002` with `fallback=no`).
 - **Integer precision** is limited to int64 (~9.2 × 10¹⁸); the spec requires arbitrary precision
 - **Decimal** is stored as float64 (~15-17 significant digits)
 - **Timezone handling** may add or omit timezone indicators in edge cases
-- **Not implemented**: `fn:transform()`, `fn:collation-key()`, `fn:idref()`, `namespace::` axis, schema-aware types
+- **Not implemented**: `fn:transform()`, `fn:idref()`, `namespace::` axis, schema-aware types
 
 See the [full limitations reference](https://doc.speedata.de/goxml/xpath/limitations/) for details.
 
