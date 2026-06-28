@@ -1,3 +1,5 @@
+[![Explore in Constellation](https://img.shields.io/badge/Explore%20in-Constellation-blue)](https://constellation.speedata.de)
+
 # goxpath
 
 An XPath 3.1 evaluator written in Go — **85% W3C conformance** (~19,000 of ~22,200 applicable [QT3](https://github.com/w3c/qt3tests) tests passing).
@@ -50,6 +52,13 @@ See the [full limitations reference](https://doc.speedata.de/goxml/xpath/limitat
 ## Documentation
 
 Full reference at **https://doc.speedata.de/goxml/** — includes language features, type system, all function categories, Go API, and known limitations.
+
+## Ecosystem
+
+goxpath is part of a broader ecosystem of PDF, typesetting and publishing technologies.
+
+**[Explore the constellation →](https://constellation.speedata.de)**
+
 
 ## License
 
