@@ -464,6 +464,39 @@ func TestEval(t *testing.T) {
 	}
 }
 
+func TestGetVariable(t *testing.T) {
+	np, err := NewParser(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Unset variable reports ok == false.
+	if v, ok := np.GetVariable("foo"); ok {
+		t.Errorf("GetVariable(%q) = %#v, %v; want unset", "foo", v, ok)
+	}
+
+	// After SetVariable the value is returned and ok == true.
+	np.SetVariable("foo", Sequence{"bar"})
+	v, ok := np.GetVariable("foo")
+	if !ok {
+		t.Fatalf("GetVariable(%q) ok = false, want true", "foo")
+	}
+	if len(v) != 1 || !itemsEqual(v[0], "bar") {
+		t.Errorf("GetVariable(%q) = %#v, want %#v", "foo", v, Sequence{"bar"})
+	}
+
+	// Save/restore round-trip: overwrite, then restore the saved binding.
+	saved, ok := np.GetVariable("foo")
+	if !ok {
+		t.Fatalf("GetVariable(%q) ok = false, want true", "foo")
+	}
+	np.SetVariable("foo", Sequence{"baz"})
+	np.SetVariable("foo", saved)
+	if v, ok := np.GetVariable("foo"); !ok || len(v) != 1 || !itemsEqual(v[0], "bar") {
+		t.Errorf("after restore GetVariable(%q) = %#v, %v; want %#v, true", "foo", v, ok, Sequence{"bar"})
+	}
+}
+
 func TestUnionChildAxis(t *testing.T) {
 	unionDoc := `<div><x>25</x><y>39</y><z>75</z></div>`
 	sr := strings.NewReader(unionDoc)

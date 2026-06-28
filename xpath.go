@@ -80,13 +80,13 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 // changed without changing the original context.
 func CopyContext(cur *Context) *Context {
 	ctx := &Context{
-		xmldoc:       cur.xmldoc,
-		vars:         maps.Clone(cur.vars),
-		Namespaces:   maps.Clone(cur.Namespaces),
-		Store:        maps.Clone(cur.Store),
-		sequence:     cur.sequence,
-		currentItem:  cur.currentItem,
-		Pos:          cur.Pos,
+		xmldoc:           cur.xmldoc,
+		vars:             maps.Clone(cur.vars),
+		Namespaces:       maps.Clone(cur.Namespaces),
+		Store:            maps.Clone(cur.Store),
+		sequence:         cur.sequence,
+		currentItem:      cur.currentItem,
+		Pos:              cur.Pos,
 		ctxLengths:       slices.Clone(cur.ctxLengths),
 		ctxPositions:     slices.Clone(cur.ctxPositions),
 		DefaultCollation: cur.DefaultCollation,
@@ -4851,6 +4851,14 @@ func (xp *Parser) XMLDocument() *goxml.XMLDocument {
 // SetVariable is used to set a variable name.
 func (xp *Parser) SetVariable(name string, value Sequence) {
 	xp.Ctx.vars[name] = value
+}
+
+// GetVariable returns the value of the variable name and a boolean reporting
+// whether the variable was set. It allows callers to save and restore variable
+// bindings (for example around a scoped template parameter binding).
+func (xp *Parser) GetVariable(name string) (Sequence, bool) {
+	v, ok := xp.Ctx.vars[name]
+	return v, ok
 }
 
 // Evaluate reads an XPath expression and evaluates it in the given context.
