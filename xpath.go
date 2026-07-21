@@ -1269,10 +1269,12 @@ func doCompareNode(op string, lhs EvalFunc, rhs EvalFunc) (EvalFunc, error) {
 		return nil, fmt.Errorf("unexpected expression in node comparison '%s'", op)
 	}
 	f := func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		left, err := lhs(ctx)
 		if err != nil {
 			return nil, err
 		}
+		ctx.sequence = savedSeq
 		right, err := rhs(ctx)
 		if err != nil {
 			return nil, err
@@ -1439,14 +1441,16 @@ func parseExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	f := func(ctx *Context) (Sequence, error) {
 		var ret Sequence
+		savedSeq := ctx.sequence
 		for _, ef := range efs {
+			ctx.sequence = savedSeq
 			seq, err := ef(ctx)
 			if err != nil {
 				return nil, err
 			}
 			ret = append(ret, seq...)
 		}
-
+		ctx.sequence = savedSeq
 		return ret, nil
 	}
 	leaveStep(tl, "2 parseExpr")
@@ -1883,6 +1887,7 @@ func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	f := func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		res, err := boolEval(ctx)
 		if err != nil {
 			return nil, err
@@ -1891,6 +1896,7 @@ func parseIfExpr(tl *Tokenlist) (EvalFunc, error) {
 		if err != nil {
 			return nil, err
 		}
+		ctx.sequence = savedSeq
 		if bv {
 			return thenpart(ctx)
 		}
@@ -1923,7 +1929,9 @@ func parseOrExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 	var ef EvalFunc
 	ef = func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		for _, ef := range efs {
+			ctx.sequence = savedSeq
 			s, err := ef(ctx)
 			if err != nil {
 				return nil, err
@@ -1934,10 +1942,12 @@ func parseOrExpr(tl *Tokenlist) (EvalFunc, error) {
 				return nil, err
 			}
 			if b {
+				ctx.sequence = savedSeq
 				return Sequence{true}, nil
 			}
 
 		}
+		ctx.sequence = savedSeq
 		return Sequence{false}, nil
 	}
 
@@ -1967,7 +1977,9 @@ func parseAndExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	ef := func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		for _, ef := range efs {
+			ctx.sequence = savedSeq
 			s, err := ef(ctx)
 			if err != nil {
 				return nil, err
@@ -1978,10 +1990,12 @@ func parseAndExpr(tl *Tokenlist) (EvalFunc, error) {
 				return nil, err
 			}
 			if !b {
+				ctx.sequence = savedSeq
 				return Sequence{false}, nil
 			}
 
 		}
+		ctx.sequence = savedSeq
 		return Sequence{true}, nil
 	}
 
@@ -2047,7 +2061,9 @@ func parseStringConcatExpr(tl *Tokenlist) (EvalFunc, error) {
 
 	ef := func(ctx *Context) (Sequence, error) {
 		var sb strings.Builder
+		savedSeq := ctx.sequence
 		for _, ef := range efs {
+			ctx.sequence = savedSeq
 			s, err := ef(ctx)
 			if err != nil {
 				return nil, err
@@ -2090,10 +2106,12 @@ func parseRangeExpr(tl *Tokenlist) (EvalFunc, error) {
 	}
 
 	retf := func(ctx *Context) (Sequence, error) {
+		savedSeq := ctx.sequence
 		lhs, err := efs[0](ctx)
 		if err != nil {
 			return nil, err
 		}
+		ctx.sequence = savedSeq
 		rhs, err := efs[1](ctx)
 		if err != nil {
 			return nil, err
