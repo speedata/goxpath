@@ -3386,7 +3386,7 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 		var err error
 		switch stepAxis {
 		case axisSelf:
-			// nothing
+			_, err = ctx.selfAxis(tf)
 		case axisChild:
 			_, err = ctx.childAxis(tf)
 		case axisDescendant:

@@ -243,6 +243,17 @@ func (ctx *Context) followingSiblingAxis(tf testFunc) (Sequence, error) {
 	return seq, nil
 }
 
+func (ctx *Context) selfAxis(tf testFunc) (Sequence, error) {
+	var seq Sequence
+	for _, n := range ctx.sequence {
+		if tf(ctx, n) {
+			seq = append(seq, n)
+		}
+	}
+	ctx.sequence = seq
+	return seq, nil
+}
+
 func (ctx *Context) parentAxis(tf testFunc) (Sequence, error) {
 	var seq Sequence
 	for _, n := range ctx.sequence {
