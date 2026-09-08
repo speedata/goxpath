@@ -2,6 +2,7 @@ package goxpath
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/speedata/goxml"
 )
@@ -203,18 +204,55 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 	return seq, nil
 }
 
-func (ctx *Context) followingAxis(tf testFunc) (Sequence, error) {
-	for _, n := range ctx.sequence {
-		switch n.(type) {
-		case *goxml.XMLDocument:
-			return ctx.descendantOrSelfAxis(tf)
-		case *goxml.Element:
-			ctx.followingSiblingAxis(tf)
-			ctx.descendantOrSelfAxis(tf)
+// collectSubtree appends the descendant-or-self nodes of n that match tf
+// to seq and returns the extended sequence.
+func (ctx *Context) collectSubtree(seq Sequence, n goxml.XMLNode, tf testFunc) (Sequence, error) {
+	copysequence := ctx.sequence
+	ctx.sequence = Sequence{n}
+	s, err := ctx.descendantOrSelfAxis(tf)
+	ctx.sequence = copysequence
+	if err != nil {
+		return nil, err
+	}
+	return append(seq, s...), nil
+}
 
+// followingAxis returns all nodes that are after the context node in
+// document order, excluding descendants. For each ancestor-or-self of the
+// context node (innermost first), the following siblings and their
+// subtrees are collected, which yields document order.
+func (ctx *Context) followingAxis(tf testFunc) (Sequence, error) {
+	var seq Sequence
+	var err error
+	for _, n := range ctx.sequence {
+		t, ok := n.(*goxml.Element)
+		if !ok {
+			// The document node has no following nodes.
+			continue
+		}
+		for e := t; e.Parent != nil; {
+			after := false
+			for _, cld := range e.Parent.Children() {
+				if cldElt, ok := cld.(*goxml.Element); ok && cldElt == e {
+					after = true
+					continue
+				}
+				if !after {
+					continue
+				}
+				if seq, err = ctx.collectSubtree(seq, cld, tf); err != nil {
+					return nil, err
+				}
+			}
+			pe, ok := e.Parent.(*goxml.Element)
+			if !ok {
+				break
+			}
+			e = pe
 		}
 	}
-	return ctx.sequence, nil
+	ctx.sequence = seq
+	return seq, nil
 }
 
 func (ctx *Context) followingSiblingAxis(tf testFunc) (Sequence, error) {
@@ -236,6 +274,40 @@ func (ctx *Context) followingSiblingAxis(tf testFunc) (Sequence, error) {
 						seq = append(seq, u)
 					}
 				}
+			}
+		}
+	}
+	ctx.sequence = seq
+	return seq, nil
+}
+
+// namespaceAxis returns a namespace node for every in-scope namespace of
+// the context element, including the implicit xml namespace binding.
+func (ctx *Context) namespaceAxis(tf testFunc) (Sequence, error) {
+	var seq Sequence
+	for _, n := range ctx.sequence {
+		elt, ok := n.(*goxml.Element)
+		if !ok {
+			continue
+		}
+		prefixes := make([]string, 0, len(elt.Namespaces)+1)
+		for prefix := range elt.Namespaces {
+			prefixes = append(prefixes, prefix)
+		}
+		if _, ok := elt.Namespaces["xml"]; !ok {
+			prefixes = append(prefixes, "xml")
+		}
+		// The spec leaves the order undefined; sort by prefix so the
+		// result is deterministic.
+		sort.Strings(prefixes)
+		for _, prefix := range prefixes {
+			uri, ok := elt.Namespaces[prefix]
+			if !ok {
+				uri = "http://www.w3.org/XML/1998/namespace"
+			}
+			nsNode := goxml.NamespaceNode{ID: goxml.NewID(), Prefix: prefix, URI: uri}
+			if tf(ctx, nsNode) {
+				seq = append(seq, nsNode)
 			}
 		}
 	}
@@ -355,16 +427,47 @@ func (ctx *Context) precedingSiblingAxis(tf testFunc) (Sequence, error) {
 	return seq, nil
 }
 
+// precedingAxis returns all nodes that are before the context node in
+// document order, excluding ancestors, attribute nodes and namespace
+// nodes. For each ancestor-or-self of the context node (outermost first),
+// the preceding siblings and their subtrees are collected, which yields
+// document order.
 func (ctx *Context) precedingAxis(tf testFunc) (Sequence, error) {
+	var seq Sequence
+	var err error
 	for _, n := range ctx.sequence {
-		switch n.(type) {
-		case *goxml.XMLDocument:
-			return ctx.descendantOrSelfAxis(tf)
-		case *goxml.Element:
-			ctx.precedingSiblingAxis(tf)
-			ctx.descendantOrSelfAxis(tf)
-
+		t, ok := n.(*goxml.Element)
+		if !ok {
+			// The document node has no preceding nodes.
+			continue
+		}
+		// Ancestor-or-self chain of the context node, outermost first.
+		var chain []*goxml.Element
+		for e := t; e != nil; {
+			chain = append(chain, e)
+			pe, ok := e.Parent.(*goxml.Element)
+			if !ok {
+				break
+			}
+			e = pe
+		}
+		for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+			chain[i], chain[j] = chain[j], chain[i]
+		}
+		for _, a := range chain {
+			if a.Parent == nil {
+				continue
+			}
+			for _, cld := range a.Parent.Children() {
+				if cldElt, ok := cld.(*goxml.Element); ok && cldElt == a {
+					break
+				}
+				if seq, err = ctx.collectSubtree(seq, cld, tf); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
-	return ctx.sequence, nil
+	ctx.sequence = seq
+	return seq, nil
 }

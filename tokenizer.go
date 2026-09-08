@@ -136,6 +136,7 @@ type Tokenlist struct {
 	pos           int
 	toks          tokens
 	attributeMode bool // for Name Test
+	namespaceMode bool // for Name Test on the namespace axis
 }
 
 func (tl *Tokenlist) nexttokIsTyp(typ tokenType) bool {
@@ -510,7 +511,31 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 				sr.UnreadRune()
 				tokens = append(tokens, token{".", tokOperator})
 			}
-		} else if r == '+' || r == '-' || r == '*' || r == '?' || r == '@' || r == '#' {
+		} else if r == '*' {
+			// [37] Wildcard: "*:" NCName selects all elements with that
+			// local name, regardless of namespace.
+			nextRune, _, err := sr.ReadRune()
+			if err == io.EOF {
+				tokens = append(tokens, token{"*", tokOperator})
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if nextRune == ':' {
+				word, err := getQName(sr)
+				if err != nil {
+					return nil, err
+				}
+				if word == "" {
+					return nil, fmt.Errorf("parse error, NCName expected after *:")
+				}
+				tokens = append(tokens, token{"*:" + word, tokQName})
+			} else {
+				sr.UnreadRune()
+				tokens = append(tokens, token{"*", tokOperator})
+			}
+		} else if r == '+' || r == '-' || r == '?' || r == '@' || r == '#' {
 			tokens = append(tokens, token{string(r), tokOperator})
 		} else if r == '=' {
 			nextRune, _, err := sr.ReadRune()
@@ -623,6 +648,10 @@ func stringToTokenlist(str string) (*Tokenlist, error) {
 			}
 			if nextRune == ':' {
 				tokens = append(tokens, token{strings.TrimSuffix(word, ":"), tokDoubleColon})
+			} else if nextRune == '*' && strings.HasSuffix(word, ":") {
+				// [37] Wildcard: "prefix:*" selects all elements in the
+				// namespace bound to prefix, regardless of local name.
+				tokens = append(tokens, token{word + "*", tokQName})
 			} else {
 				sr.UnreadRune()
 				tokens = append(tokens, token{word, tokQName})

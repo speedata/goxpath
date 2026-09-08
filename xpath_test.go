@@ -381,6 +381,11 @@ func TestEval(t *testing.T) {
 		{`/root/sub[3]/subsub/ancestor-or-self::element()/local-name() `, Sequence{"root", "sub", "subsub"}},
 		{`/root/sub[3]/preceding-sibling::element()/string(@foo) `, Sequence{"baz", "bar"}},
 		{`/root/other[1]/preceding::element()/string() `, Sequence{"123", "sub2", "contents sub3subsub", "subsub"}},
+		{`count(//sub[@p='a2/1']/preceding::sub) `, Sequence{5}},
+		{`count(//sub[@p='a2/1']/preceding::element()) `, Sequence{11}},
+		{`count(//sub[@p='a1/2']/following::sub) `, Sequence{2}},
+		{`//sub[@p='a1/1']/following::sub/string(@p) `, Sequence{"a1/2", "a2/1", "a2/2"}},
+		{`count(/root/@*) `, Sequence{4}},
 		{`/root//subsub[1]/../@self = "sub3" `, Sequence{true}},
 		{`for $i in 1 to 2 , $j in 2 to 3 return $i * $j `, Sequence{2.0, 3.0, 4.0, 6.0}},
 		{`count ( for $i in /root/sub return $i ) `, Sequence{3}},
@@ -598,6 +603,13 @@ func TestNSEval(t *testing.T) {
 		{`namespace-uri-from-QName(resolve-QName("a:sub", /a:root))`, Sequence{"anamespace"}},
 		{`namespace-uri-for-prefix("a", /a:root)`, Sequence{"anamespace"}},
 		{`namespace-uri-for-prefix("xml", /a:root)`, Sequence{"http://www.w3.org/XML/1998/namespace"}},
+		{`count(//a:*)`, Sequence{2}},
+		{`count(//*:sub)`, Sequence{1}},
+		{`count(//a:sub/self::a:*)`, Sequence{1}},
+		{`count(//a:sub/self::*:root)`, Sequence{0}},
+		{`string(/a:root/namespace::a)`, Sequence{"anamespace"}},
+		{`/a:root/namespace::a = "anamespace"`, Sequence{true}},
+		{`count(/a:root/namespace::*)`, Sequence{2}},
 	}
 	for _, td := range testdata {
 		sr := strings.NewReader(nsDoc)

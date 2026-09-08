@@ -258,14 +258,35 @@ func returnProcessingInstructionNameTest(name string) func(*Context, Item) bool 
 	}
 }
 
+// returnAttributeNameTest creates a test function for an attribute name
+// test: "name", "prefix:name", "*", "prefix:*" or "*:name".
 func returnAttributeNameTest(name string) func(*Context, Item) bool {
+	prefix, localName := splitNameTest(name)
 	return func(ctx *Context, itm Item) bool {
-		if attr, ok := itm.(*goxml.Attribute); ok {
-			if attr.Name == name {
-				return true
-			}
+		attr, ok := itm.(*goxml.Attribute)
+		if !ok {
+			return false
 		}
-		return false
+		if localName != "*" && attr.Name != localName {
+			return false
+		}
+		if prefix == "" || prefix == "*" {
+			return true
+		}
+		return attr.Namespace == ctx.Namespaces[prefix]
+	}
+}
+
+// returnNamespaceNameTest creates a test function for a name test on the
+// namespace axis. The name matches the namespace prefix; "*" matches all
+// namespace nodes.
+func returnNamespaceNameTest(name string) func(*Context, Item) bool {
+	return func(ctx *Context, itm Item) bool {
+		nsNode, ok := itm.(goxml.NamespaceNode)
+		if !ok {
+			return false
+		}
+		return name == "*" || nsNode.Prefix == name
 	}
 }
 
@@ -287,28 +308,34 @@ func returnElementEQNameTest(eqname string) func(*Context, Item) bool {
 	}
 }
 
+// splitNameTest splits a name test into prefix and local part. Either
+// part may be "*" for the wildcard forms "*", "prefix:*" and "*:name".
+func splitNameTest(name string) (prefix string, localName string) {
+	parts := strings.SplitN(name, ":", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", parts[0]
+}
+
+// returnElementNameTest creates a test function for an element name test:
+// "name", "prefix:name", "*", "prefix:*" or "*:name".
 func returnElementNameTest(name string) func(*Context, Item) bool {
 	// Pre-split the name once instead of on every call.
-	parts := strings.SplitN(name, ":", 2)
-	var prefix, localName string
-	if len(parts) == 2 {
-		prefix = parts[0]
-		localName = parts[1]
-	} else {
-		localName = parts[0]
-	}
+	prefix, localName := splitNameTest(name)
 
 	return func(ctx *Context, itm Item) bool {
-		if elt, ok := itm.(*goxml.Element); ok {
-			if elt.Name != localName {
-				return false
-			}
-			if prefix != "" {
-				return elt.Namespaces[elt.Prefix] == ctx.Namespaces[prefix]
-			}
+		elt, ok := itm.(*goxml.Element)
+		if !ok {
+			return false
+		}
+		if localName != "*" && elt.Name != localName {
+			return false
+		}
+		if prefix == "" || prefix == "*" {
 			return true
 		}
-		return false
+		return elt.Namespaces[elt.Prefix] == ctx.Namespaces[prefix]
 	}
 }
 
@@ -474,6 +501,8 @@ func itemStringvalue(itm Item) string {
 		ret = string(t.Inst)
 	case goxml.CharData:
 		ret = t.Contents
+	case goxml.NamespaceNode:
+		ret = t.URI
 	case []goxml.XMLNode:
 		var str strings.Builder
 		for _, n := range t {
@@ -1011,6 +1040,14 @@ func compareFunc(op string, a, b any) (bool, error) {
 	if docRight, ok := b.(*goxml.XMLDocument); ok {
 		dtRight = xString
 		stringRight = docRight.Stringvalue()
+	}
+	if nsLeft, ok := a.(goxml.NamespaceNode); ok {
+		dtLeft = xString
+		stringLeft = nsLeft.URI
+	}
+	if nsRight, ok := b.(goxml.NamespaceNode); ok {
+		dtRight = xString
+		stringRight = nsRight.URI
 	}
 
 	if dtLeft == xDouble && dtRight == xDouble {
@@ -3302,6 +3339,7 @@ const (
 	axisAncestorOrSelf
 	axisPreceding
 	axisPrecedingSibling
+	axisNamespace
 )
 
 func (a axis) String() string {
@@ -3328,7 +3366,8 @@ func (a axis) String() string {
 		return "preceding"
 	case axisPrecedingSibling:
 		return "preceding-sibling"
-
+	case axisNamespace:
+		return "namespace"
 	}
 	return ""
 }
@@ -3341,6 +3380,7 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 
 	stepAxis := axisChild
 	tl.attributeMode = false
+	tl.namespaceMode = false
 
 	if tl.nexttokIsTyp(tokDoubleColon) {
 		nexttok, err := tl.read()
@@ -3373,6 +3413,9 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 			stepAxis = axisPrecedingSibling
 		case "preceding":
 			stepAxis = axisPreceding
+		case "namespace":
+			stepAxis = axisNamespace
+			tl.namespaceMode = true
 		default:
 			return nil, fmt.Errorf("unknown axis %s", nexttok.Value.(string))
 		}
@@ -3425,6 +3468,8 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 			_, err = ctx.precedingSiblingAxis(tf)
 		case axisPreceding:
 			_, err = ctx.precedingAxis(tf)
+		case axisNamespace:
+			_, err = ctx.namespaceAxis(tf)
 		default:
 			return nil, fmt.Errorf("unknown axis %s", stepAxis)
 		}
@@ -3495,6 +3540,8 @@ func parseNameTest(tl *Tokenlist) (testFunc, error) {
 		}
 		if tl.attributeMode {
 			tf = returnAttributeNameTest(name)
+		} else if tl.namespaceMode {
+			tf = returnNamespaceNameTest(name)
 		} else {
 			tf = returnElementNameTest(name)
 		}
@@ -3526,19 +3573,11 @@ func parseWildCard(tl *Tokenlist) (testFunc, error) {
 	if str, ok := strTok.Value.(string); ok {
 		if str == "*" || strings.HasPrefix(str, "*:") || strings.HasSuffix(str, ":*") {
 			if tl.attributeMode {
-				tf = func(ctx *Context, itm Item) bool {
-					if _, ok := itm.(*goxml.Attribute); ok {
-						return true
-					}
-					return false
-				}
+				tf = returnAttributeNameTest(str)
+			} else if tl.namespaceMode {
+				tf = returnNamespaceNameTest(str)
 			} else {
-				tf = func(ctx *Context, itm Item) bool {
-					if _, ok := itm.(*goxml.Element); ok {
-						return true
-					}
-					return false
-				}
+				tf = returnElementNameTest(str)
 			}
 		} else {
 			tl.unread()
