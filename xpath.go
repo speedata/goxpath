@@ -2174,16 +2174,15 @@ func parseRangeExpr(tl *Tokenlist) (EvalFunc, error) {
 		if endF-startF > 10_000_000 {
 			return nil, fmt.Errorf("range too large: %v to %v", startF, endF)
 		}
+		// Guard against int overflow before converting: float-to-int
+		// conversion is undefined outside the representable range, and a
+		// loop bound of MaxInt would overflow on increment. Note that int
+		// is 32 bits on 32-bit platforms.
+		if startF < math.MinInt || endF >= math.MaxInt {
+			return nil, NewXPathError("FOAR0002", "range bounds overflow implementation limits")
+		}
 		start := int(startF)
 		end := int(endF)
-		// Guard against int overflow: if start or end is at MaxInt64,
-		// the loop increment would overflow
-		if start == math.MaxInt64 || end == math.MaxInt64 {
-			if start == end {
-				return Sequence{start}, nil
-			}
-			return nil, fmt.Errorf("range too large: integer overflow")
-		}
 		count := end - start + 1
 		seq := make(Sequence, 0, count)
 		for i := start; i <= end; i++ {
