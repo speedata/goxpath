@@ -39,6 +39,41 @@ type Context struct {
 	// and by string functions when no explicit collation argument is supplied.
 	// If nil, the Unicode codepoint collation is used.
 	DefaultCollation Collation
+	// functions holds the functions registered for this evaluation only. They
+	// take precedence over the globally registered ones. Contexts derived with
+	// CopyContext share the table, so a host language can register its
+	// functions once before evaluation starts.
+	functions map[string]*Function
+}
+
+// RegisterFunction registers an XPath function for this context only. Unlike
+// the package level RegisterFunction it touches no global state, so evaluations
+// running in parallel do not interfere. Use it for anything bound to a single
+// evaluation, such as functions defined by the document being processed.
+func (ctx *Context) RegisterFunction(f *Function) {
+	if ctx.functions == nil {
+		ctx.functions = make(map[string]*Function)
+	}
+	ctx.functions[f.Namespace+" "+f.Name] = f
+}
+
+// FunctionExists reports whether a function with the given namespace and local
+// name is visible in this context, either registered on the context itself or
+// globally.
+func (ctx *Context) FunctionExists(namespace, name string) bool {
+	return ctx.getfunction(namespace, name) != nil
+}
+
+// getfunction looks up a function, preferring the ones registered on the
+// context over the global ones.
+func (ctx *Context) getfunction(namespace, name string) *Function {
+	key := namespace + " " + name
+	if ctx != nil {
+		if f, ok := ctx.functions[key]; ok {
+			return f
+		}
+	}
+	return xpathfunctions[key]
 }
 
 // Collation returns the static default collation, falling back to the
@@ -90,6 +125,9 @@ func CopyContext(cur *Context) *Context {
 		ctxLengths:       slices.Clone(cur.ctxLengths),
 		ctxPositions:     slices.Clone(cur.ctxPositions),
 		DefaultCollation: cur.DefaultCollation,
+		// Shared on purpose, not cloned: a function registered for the
+		// evaluation stays visible in nested calls.
+		functions: cur.functions,
 	}
 	return ctx
 }
@@ -113,6 +151,8 @@ func (ctx *Context) ResetFrom(src *Context) {
 	ctx.ctxLengths = append(ctx.ctxLengths[:0], src.ctxLengths...)
 	ctx.ctxPositions = append(ctx.ctxPositions[:0], src.ctxPositions...)
 	ctx.DefaultCollation = src.DefaultCollation
+	// Shared on purpose, not cloned, as in CopyContext.
+	ctx.functions = src.functions
 }
 
 // SetContextSequence sets the context sequence and returns the previous one.
@@ -2767,7 +2807,7 @@ func parseCastableExpr(tl *Tokenlist) (EvalFunc, error) {
 					castNS = ns
 				}
 			}
-			fn := getfunction(castNS, castLocal)
+			fn := ctx.getfunction(castNS, castLocal)
 			if fn != nil {
 				_, castErr := fn.F(ctx, []Sequence{{item}})
 				return Sequence{castErr == nil}, nil
@@ -2847,7 +2887,7 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 				"xs:negativeInteger", "xs:positiveInteger":
 				// Route through registered constructor to get correct subtype tag
 				castLocal := typName[3:] // strip "xs:"
-				fn := getfunction(nsXS, castLocal)
+				fn := ctx.getfunction(nsXS, castLocal)
 				if fn != nil {
 					return fn.F(ctx, []Sequence{{item}})
 				}
@@ -2865,7 +2905,7 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 				"xs:hexBinary", "xs:base64Binary":
 				// Route through registered constructor for correct type tag
 				castLocal := typName[3:] // strip "xs:"
-				fn := getfunction(nsXS, castLocal)
+				fn := ctx.getfunction(nsXS, castLocal)
 				if fn != nil {
 					return fn.F(ctx, []Sequence{{item}})
 				}
@@ -2910,7 +2950,7 @@ func parseCastExpr(tl *Tokenlist) (EvalFunc, error) {
 						castNS = ns
 					}
 				}
-				fn := getfunction(castNS, castLocal)
+				fn := ctx.getfunction(castNS, castLocal)
 				if fn != nil {
 					return fn.F(ctx, []Sequence{{item}})
 				}
@@ -4113,7 +4153,7 @@ func parsePrimaryExpr(tl *Tokenlist) (EvalFunc, error) {
 					}
 				}
 			}
-			fn := getfunction(ns, capturedLocal)
+			fn := ctx.getfunction(ns, capturedLocal)
 			if fn == nil {
 				return nil, NewXPathError("XPST0017", fmt.Sprintf("unknown function %s#%d", capturedLocal, capturedArity))
 			}
@@ -4218,7 +4258,7 @@ func parseFunctionCall(tl *Tokenlist) (EvalFunc, error) {
 	// callFn resolves the function by direct namespace or prefix
 	callFn := func(ctx *Context, arguments []Sequence) (Sequence, error) {
 		if fnDirectNS != "" {
-			fnObj := getfunction(fnDirectNS, fnLocalName)
+			fnObj := ctx.getfunction(fnDirectNS, fnLocalName)
 			if fnObj == nil {
 				return nil, fmt.Errorf("Could not find function %q in namespace %q", fnLocalName, fnDirectNS)
 			}
