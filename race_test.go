@@ -1,6 +1,7 @@
 package goxpath
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,46 @@ func TestConcurrentEvaluate(t *testing.T) {
 				}
 			}
 		}()
+	}
+	wg.Wait()
+}
+
+// TestConcurrentContextFunctions verifies that registering functions per context
+// keeps parallel evaluations apart. Registering the same name globally instead
+// crashes the process with "concurrent map read and map write", because the
+// global registry is an unsynchronized map.
+func TestConcurrentContextFunctions(t *testing.T) {
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			np, err := NewParser(strings.NewReader(doc))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			want := strconv.Itoa(id)
+			np.Ctx.RegisterFunction(&Function{
+				Name:      "goroutine-id",
+				Namespace: nsFN,
+				F: func(*Context, []Sequence) (Sequence, error) {
+					return Sequence{want}, nil
+				},
+			})
+			for i := 0; i < 200; i++ {
+				seq, err := np.Evaluate(`goroutine-id()`)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if got := seq.Stringvalue(); got != want {
+					t.Errorf("goroutine %d saw %q", id, got)
+					return
+				}
+			}
+		}(g)
 	}
 	wg.Wait()
 }

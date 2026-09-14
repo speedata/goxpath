@@ -4543,7 +4543,7 @@ func init() {
 		}
 		ns := qname.Namespace
 		name := qname.Localname
-		fn := getfunction(ns, name)
+		fn := ctx.getfunction(ns, name)
 		if fn == nil {
 			return Sequence{}, nil
 		}
@@ -5141,16 +5141,19 @@ type Function struct {
 	DynamicCallError string // if non-empty, dynamic calls (via function reference) raise this error
 }
 
-// RegisterFunction registers an XPath function
+// RegisterFunction registers an XPath function globally, for every evaluation in
+// the process. The registry is an unsynchronized map, so this must only be
+// called during initialization, before any evaluation runs. To register a
+// function bound to a single evaluation - one defined by the document being
+// processed, say - use (*Context).RegisterFunction instead, which is safe while
+// other evaluations run in parallel.
 func RegisterFunction(f *Function) {
 	xpathfunctions[f.Namespace+" "+f.Name] = f
 }
 
-func getfunction(namespace, name string) *Function {
-	return xpathfunctions[namespace+" "+name]
-}
-
-// FunctionExists returns true if a function with the given namespace and local name is registered.
+// FunctionExists returns true if a function with the given namespace and local
+// name is registered globally. It does not see functions registered on a
+// context; use (*Context).FunctionExists for that.
 func FunctionExists(namespace, name string) bool {
 	return xpathfunctions[namespace+" "+name] != nil
 }
@@ -5166,7 +5169,7 @@ func callFunctionResolved(prefix, localName string, arguments []Sequence, ctx *C
 		ns = nsFN
 	}
 
-	fn := getfunction(ns, localName)
+	fn := ctx.getfunction(ns, localName)
 	if fn == nil {
 		return nil, fmt.Errorf("Could not find function %q in namespace %q", localName, ns)
 	}
