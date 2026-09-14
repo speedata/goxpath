@@ -3615,12 +3615,12 @@ func parseFilterExpr(tl *Tokenlist) (EvalFunc, error) {
 			}
 			baseEf := ef
 			ef = func(ctx *Context) (Sequence, error) {
-				ctx.sequence, err = baseEf(ctx)
+				seq, err := baseEf(ctx)
 				if err != nil {
 					return nil, err
 				}
-				_, err = ctx.Filter(predicate)
-				if err != nil {
+				ctx.sequence = seq
+				if _, err := ctx.Filter(predicate); err != nil {
 					return nil, err
 				}
 				ctx.ctxPositions = nil

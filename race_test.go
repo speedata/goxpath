@@ -19,6 +19,11 @@ func TestConcurrentEvaluate(t *testing.T) {
 		`count(/root/sub)`,
 		`string(/root/sub[1])`,
 		`for $i in /root/sub return string($i/@foo)`,
+		// Predicates on a PrimaryExpr go through parseFilterExpr, which is a
+		// separate code path from the predicates on axis steps above.
+		`(//sub)[1]`,
+		`(/root/sub)[@foo='bar']`,
+		`(1 to 10)[. mod 2 = 0]`,
 	}
 
 	var wg sync.WaitGroup
