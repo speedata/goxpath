@@ -10,15 +10,27 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/speedata/goxml"
 )
 
 const qt3Dir = "testdata/qt3tests"
 
+// pinTimezone fixes the local zone for the duration of a test. Several test
+// cases compare against fn:current-dateTime() and friends, whose serialisation
+// carries the local offset, so the set of passing tests — and with it the
+// baseline in testdata/qt3_baseline.txt — would otherwise differ per machine.
+func pinTimezone(t *testing.T) {
+	prev := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = prev })
+}
+
 // TestQT3Survey runs all QT3 XPath test sets and reports pass/fail/skip counts.
 // It runs each test set in a subprocess to isolate panics.
 func TestQT3Survey(t *testing.T) {
+	pinTimezone(t)
 	if _, err := os.Stat(filepath.Join(qt3Dir, "catalog.xml")); err != nil {
 		t.Skip("QT3 test suite not found (clone https://github.com/w3c/qt3tests into testdata/qt3tests)")
 	}
@@ -234,6 +246,7 @@ func runQT3SetInProcess(setFile string, globalEnvs map[string]*qt3Env) (sr qt3Se
 
 // TestQT3OneSet is called as a subprocess by TestQT3Survey.
 func TestQT3OneSet(t *testing.T) {
+	pinTimezone(t)
 	setFile := os.Getenv("QT3_SET_FILE")
 	if setFile == "" {
 		t.Skip("QT3_SET_FILE not set")

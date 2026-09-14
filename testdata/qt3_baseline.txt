@@ -1269,6 +1269,7 @@ fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-2
 fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-3
 fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-4
 fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-5
+fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-6
 fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-7
 fn-adjust-dateTime-to-timezone/K-AdjDateTimeToTimezoneFunc-8
 fn-adjust-dateTime-to-timezone/cbcl-adjust-dateTime-to-timezone-001
@@ -1309,6 +1310,7 @@ fn-adjust-time-to-timezone/K-AdjTimeToTimezoneFunc-4
 fn-adjust-time-to-timezone/K-AdjTimeToTimezoneFunc-5
 fn-adjust-time-to-timezone/K-AdjTimeToTimezoneFunc-6
 fn-adjust-time-to-timezone/K-AdjTimeToTimezoneFunc-7
+fn-adjust-time-to-timezone/K-AdjTimeToTimezoneFunc-9
 fn-adjust-time-to-timezone/cbcl-adjust-time-to-timezone-001
 fn-adjust-time-to-timezone/cbcl-adjust-time-to-timezone-002
 fn-adjust-time-to-timezone/fn-adjust-time-to-timezone-1
@@ -2573,6 +2575,7 @@ fn-deep-equal/K-SeqDeepEqualFunc-9
 fn-deep-equal/K2-SeqDeepEqualFunc-1
 fn-deep-equal/K2-SeqDeepEqualFunc-35
 fn-deep-equal/K2-SeqDeepEqualFunc-4
+fn-deep-equal/K2-SeqDeepEqualFunc-40
 fn-deep-equal/K2-SeqDeepEqualFunc-43
 fn-deep-equal/K2-SeqDeepEqualFunc-8
 fn-deep-equal/K2-SeqDeepEqualFunc-9
@@ -2597,7 +2600,6 @@ fn-deep-equal/fn-deep-equal-maps-1
 fn-deep-equal/fn-deep-equal-maps-10
 fn-deep-equal/fn-deep-equal-maps-13
 fn-deep-equal/fn-deep-equal-maps-15
-fn-deep-equal/fn-deep-equal-maps-16
 fn-deep-equal/fn-deep-equal-maps-17
 fn-deep-equal/fn-deep-equal-maps-2
 fn-deep-equal/fn-deep-equal-maps-3
@@ -2728,6 +2730,7 @@ fn-distinct-values/K-SeqDistinctValuesFunc-8
 fn-distinct-values/K-SeqDistinctValuesFunc-9
 fn-distinct-values/K2-SeqDistinctValuesFunc-1
 fn-distinct-values/cbcl-distinct-values-001
+fn-distinct-values/cbcl-distinct-values-003
 fn-distinct-values/cbcl-distinct-values-016
 fn-distinct-values/fn-distinct-values-2
 fn-distinct-values/fn-distinct-values-mixed-args-001
@@ -8475,6 +8478,7 @@ fn-substring-before/fn-substring-before-7
 fn-substring-before/fn-substring-before-8
 fn-substring-before/fn-substring-before-9
 fn-substring/K-SubstringFunc-1
+fn-substring/K-SubstringFunc-10
 fn-substring/K-SubstringFunc-11
 fn-substring/K-SubstringFunc-12
 fn-substring/K-SubstringFunc-13
@@ -8735,6 +8739,7 @@ fn-timezone-from-date/K-TimezoneFromDateFunc-1
 fn-timezone-from-date/K-TimezoneFromDateFunc-2
 fn-timezone-from-date/K-TimezoneFromDateFunc-5
 fn-timezone-from-date/K-TimezoneFromDateFunc-6
+fn-timezone-from-date/cbcl-timezone-from-date-001
 fn-timezone-from-date/fn-timezone-from-date-1
 fn-timezone-from-date/fn-timezone-from-date-10
 fn-timezone-from-date/fn-timezone-from-date-11
@@ -8750,6 +8755,8 @@ fn-timezone-from-date/fn-timezone-from-date-2
 fn-timezone-from-date/fn-timezone-from-date-20
 fn-timezone-from-date/fn-timezone-from-date-3
 fn-timezone-from-date/fn-timezone-from-date-4
+fn-timezone-from-date/fn-timezone-from-date-6
+fn-timezone-from-date/fn-timezone-from-date-7
 fn-timezone-from-date/fn-timezone-from-date-8
 fn-timezone-from-date/fn-timezone-from-date-9
 fn-timezone-from-dateTime/K-TimezoneFromDateTimeFunc-1
@@ -8768,6 +8775,8 @@ fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-19
 fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-2
 fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-20
 fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-4
+fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-6
+fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-7
 fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-8
 fn-timezone-from-dateTime/fn-timezone-from-dateTimealt-9
 fn-timezone-from-time/K-TimezoneFromTimeFunc-1
@@ -8788,6 +8797,8 @@ fn-timezone-from-time/fn-timezone-from-time-19
 fn-timezone-from-time/fn-timezone-from-time-20
 fn-timezone-from-time/fn-timezone-from-time-3
 fn-timezone-from-time/fn-timezone-from-time-4
+fn-timezone-from-time/fn-timezone-from-time-6
+fn-timezone-from-time/fn-timezone-from-time-7
 fn-timezone-from-time/fn-timezone-from-time-8
 fn-timezone-from-time/fn-timezone-from-time-9
 fn-tokenize/K-TokenizeFunc-2
@@ -9533,7 +9544,6 @@ map-remove/map-remove-010
 map-remove/map-remove-011
 map-remove/map-remove-012
 map-remove/map-remove-013
-map-remove/map-remove-014
 map-remove/map-remove-015
 map-remove/map-remove-017
 map-remove/map-remove-018
@@ -9602,7 +9612,6 @@ math-exp/math-exp-002
 math-exp/math-exp-003
 math-exp/math-exp-004
 math-exp/math-exp-005
-math-exp/math-exp-006
 math-exp/math-exp-007
 math-exp/math-exp-008
 math-exp/math-exp-009
@@ -12493,6 +12502,8 @@ op-string-less-than/cbcl-string-less-than-004
 op-subtract-dateTimes/K-dateTimesSubtract-1
 op-subtract-dateTimes/cbcl-subtract-dateTimes-001
 op-subtract-dateTimes/cbcl-subtract-dateTimes-002
+op-subtract-dateTimes/cbcl-subtract-dateTimes-003
+op-subtract-dateTimes/cbcl-subtract-dateTimes-004
 op-subtract-dateTimes/op-subtract-dateTimes-yielding-DTD-1
 op-subtract-dateTimes/op-subtract-dateTimes-yielding-DTD-10
 op-subtract-dateTimes/op-subtract-dateTimes-yielding-DTD-11
@@ -12516,6 +12527,8 @@ op-subtract-dates/K-DatesSubtract-1
 op-subtract-dates/K-DatesSubtract-2
 op-subtract-dates/cbcl-subtract-dates-001
 op-subtract-dates/cbcl-subtract-dates-002
+op-subtract-dates/cbcl-subtract-dates-003
+op-subtract-dates/cbcl-subtract-dates-004
 op-subtract-dates/op-subtract-dates-yielding-DTD-1
 op-subtract-dates/op-subtract-dates-yielding-DTD-10
 op-subtract-dates/op-subtract-dates-yielding-DTD-11
@@ -12611,6 +12624,10 @@ op-subtract-dayTimeDurations/op-subtract-dayTimeDurations2args-4
 op-subtract-dayTimeDurations/op-subtract-dayTimeDurations2args-5
 op-subtract-times/K-TimeSubtract-1
 op-subtract-times/K-TimeSubtract-2
+op-subtract-times/cbcl-subtract-times-001
+op-subtract-times/cbcl-subtract-times-002
+op-subtract-times/cbcl-subtract-times-003
+op-subtract-times/cbcl-subtract-times-004
 op-subtract-times/op-subtract-times-1
 op-subtract-times/op-subtract-times-10
 op-subtract-times/op-subtract-times-11
@@ -12749,8 +12766,12 @@ op-time-greater-than/K-TimeGT-5
 op-time-greater-than/K-TimeGT-6
 op-time-greater-than/cbcl-time-greater-than-002
 op-time-greater-than/cbcl-time-greater-than-003
+op-time-greater-than/cbcl-time-greater-than-004
+op-time-greater-than/cbcl-time-greater-than-005
 op-time-greater-than/cbcl-time-greater-than-007
 op-time-greater-than/cbcl-time-greater-than-008
+op-time-greater-than/cbcl-time-greater-than-009
+op-time-greater-than/cbcl-time-greater-than-010
 op-time-greater-than/op-time-greater-than-1
 op-time-greater-than/op-time-greater-than-10
 op-time-greater-than/op-time-greater-than-11
@@ -12783,8 +12804,12 @@ op-time-less-than/K-TimeLT-5
 op-time-less-than/K-TimeLT-6
 op-time-less-than/cbcl-time-less-than-002
 op-time-less-than/cbcl-time-less-than-003
+op-time-less-than/cbcl-time-less-than-004
+op-time-less-than/cbcl-time-less-than-005
 op-time-less-than/cbcl-time-less-than-007
 op-time-less-than/cbcl-time-less-than-008
+op-time-less-than/cbcl-time-less-than-009
+op-time-less-than/cbcl-time-less-than-010
 op-time-less-than/op-time-less-than-1
 op-time-less-than/op-time-less-than-10
 op-time-less-than/op-time-less-than-11
@@ -13514,6 +13539,7 @@ prod-CastExpr.derived/cbcl-cast-integer-002
 prod-CastExpr.derived/cbcl-cast-integer-003
 prod-CastExpr.derived/cbcl-cast-integer-004
 prod-CastExpr.derived/cbcl-cast-language-001
+prod-CastExpr.derived/cbcl-cast-long-001
 prod-CastExpr.derived/cbcl-cast-long-003
 prod-CastExpr.derived/cbcl-cast-long-004
 prod-CastExpr.derived/cbcl-cast-name-001
@@ -13545,6 +13571,7 @@ prod-CastExpr.derived/cbcl-cast-unsignedInt-002
 prod-CastExpr.derived/cbcl-cast-unsignedInt-003
 prod-CastExpr.derived/cbcl-cast-unsignedInt-004
 prod-CastExpr.derived/cbcl-cast-unsignedInt-005
+prod-CastExpr.derived/cbcl-cast-unsignedLong-001
 prod-CastExpr.derived/cbcl-cast-unsignedLong-002
 prod-CastExpr.derived/cbcl-cast-unsignedLong-003
 prod-CastExpr.derived/cbcl-cast-unsignedLong-004
@@ -16744,6 +16771,7 @@ prod-CastableExpr/cbcl-castable-language-001
 prod-CastableExpr/cbcl-castable-language-002
 prod-CastableExpr/cbcl-castable-language-003
 prod-CastableExpr/cbcl-castable-language-004
+prod-CastableExpr/cbcl-castable-long-001
 prod-CastableExpr/cbcl-castable-long-003
 prod-CastableExpr/cbcl-castable-long-004
 prod-CastableExpr/cbcl-castable-name-001
@@ -16779,6 +16807,7 @@ prod-CastableExpr/cbcl-castable-unsignedInt-002
 prod-CastableExpr/cbcl-castable-unsignedInt-003
 prod-CastableExpr/cbcl-castable-unsignedInt-004
 prod-CastableExpr/cbcl-castable-unsignedInt-005
+prod-CastableExpr/cbcl-castable-unsignedLong-001
 prod-CastableExpr/cbcl-castable-unsignedLong-002
 prod-CastableExpr/cbcl-castable-unsignedLong-003
 prod-CastableExpr/cbcl-castable-unsignedLong-004
