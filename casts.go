@@ -714,10 +714,27 @@ func xsInteger(_ *Context, args []Sequence) (Sequence, error) {
 		}
 		return Sequence{0}, nil
 	}
+	// Integers are passed through without a float64 round trip. Converting
+	// 9223372036854775807 to float64 rounds it up to 2^63, and converting that
+	// back is architecture-dependent: arm64 saturates to MaxInt64 while amd64
+	// yields MinInt64, so the value would silently flip sign on amd64.
+	if i, ok := item.(int); ok {
+		return Sequence{i}, nil
+	}
+	if xi, ok := item.(XSInteger); ok {
+		return Sequence{xi.V}, nil
+	}
 	// Direct numeric conversion
 	if f, ok := ToFloat64(item); ok {
 		if math.IsNaN(f) || math.IsInf(f, 0) {
 			return nil, NewXPathError("FOCA0002", fmt.Sprintf("cannot cast %v to xs:integer", f))
+		}
+		// int(f) is architecture-dependent once f no longer fits into an int,
+		// so reject those values instead. float64(math.MinInt) is exact (-2^63,
+		// or -2^31 on 32-bit platforms) and so is its negation.
+		minInt := float64(math.MinInt)
+		if f < minInt || f >= -minInt {
+			return nil, NewXPathError("FOCA0003", fmt.Sprintf("value %v is too large for xs:integer", f))
 		}
 		return Sequence{int(f)}, nil
 	}

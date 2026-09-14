@@ -3336,6 +3336,22 @@ func fnStringToCodepoints(ctx *Context, args []Sequence) (Sequence, error) {
 	return retSeq, nil
 }
 
+// clampPosition clamps a 1-based position into [1, n+1] so that converting it
+// to an int stays within range. Converting an out-of-range or infinite float to
+// an int is architecture-dependent in Go — arm64 saturates while amd64 yields
+// MinInt — which would otherwise make results differ per platform. NaN must be
+// handled by the caller: every comparison against it is false, so it would pass
+// through unchanged.
+func clampPosition(p float64, n int) float64 {
+	if p < 1 {
+		return 1
+	}
+	if p > float64(n)+1 {
+		return float64(n) + 1
+	}
+	return p
+}
+
 func fnSubstring(ctx *Context, args []Sequence) (Sequence, error) {
 	inputSeq := args[0]
 	startSeq := args[1]
@@ -3353,28 +3369,31 @@ func fnSubstring(ctx *Context, args []Sequence) (Sequence, error) {
 	runeLen := len(inputRunes)
 
 	// XPath spec: positions are 1-based, arguments are rounded,
-	// and the result is clipped to the actual string bounds.
-	start := int(math.Round(startNum)) - 1 // convert to 0-based
+	// and the result is clipped to the actual string bounds. A position is kept
+	// when start <= p < start + length, so a NaN bound keeps nothing: every
+	// comparison against NaN is false. NaN has to be caught before the
+	// conversion to int, which is architecture-dependent for it.
+	if math.IsNaN(startNum) {
+		return Sequence{""}, nil
+	}
+	startFloat := math.Round(startNum)
 	if len(args) > 2 {
 		var lenNum float64
 		if lenNum, err = NumberValue(args[2]); err != nil {
 			return nil, err
 		}
-		end := start + int(math.Round(lenNum))
-		if start < 0 {
-			start = 0
+		endFloat := startFloat + math.Round(lenNum)
+		if math.IsNaN(endFloat) {
+			return Sequence{""}, nil
 		}
-		if end > runeLen {
-			end = runeLen
-		}
+		start := int(clampPosition(startFloat, runeLen)) - 1
+		end := int(clampPosition(endFloat, runeLen)) - 1
 		if start >= end {
 			return Sequence{""}, nil
 		}
 		return Sequence{string(inputRunes[start:end])}, nil
 	}
-	if start < 0 {
-		start = 0
-	}
+	start := int(clampPosition(startFloat, runeLen)) - 1
 	if start >= runeLen {
 		return Sequence{""}, nil
 	}
@@ -3458,16 +3477,21 @@ func fnSubsequence(ctx *Context, args []Sequence) (Sequence, error) {
 	endFloat := startRounded + lengthRounded
 	startFloat := startRounded
 
-	// Clamp to valid range
-	if startFloat < 1 {
-		startFloat = 1
-	}
-	if endFloat > float64(len(sourceSeq))+1 {
-		endFloat = float64(len(sourceSeq)) + 1
+	// A start of -INF with a length of +INF gives NaN, which the NaN checks on
+	// the individual arguments above do not catch. No position satisfies the
+	// range then, so the result is empty. This has to happen before the
+	// clamping below: every comparison against NaN is false, so the clamp would
+	// leave NaN in place, and converting a NaN to int is architecture-dependent
+	// (0 on arm64, MinInt64 on amd64, which wraps to MaxInt64 here and makes
+	// the slice expression at the end panic).
+	if math.IsNaN(endFloat) {
+		return Sequence{}, nil
 	}
 
-	startIdx := int(startFloat) - 1
-	endIdx := int(endFloat) - 1
+	// Clamp both bounds into [1, len+1] so that the conversions below stay
+	// within int range for any input, including -INF and huge finite values.
+	startIdx := int(clampPosition(startFloat, len(sourceSeq))) - 1
+	endIdx := int(clampPosition(endFloat, len(sourceSeq))) - 1
 
 	if startIdx >= endIdx || startIdx >= len(sourceSeq) {
 		return Sequence{}, nil

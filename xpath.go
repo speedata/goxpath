@@ -920,6 +920,19 @@ const (
 	xBoolean
 )
 
+// floatFitsInt reports whether f is a whole number that survives a conversion
+// to int. Converting a NaN, an infinity or a value outside the int range is
+// architecture-dependent in Go — arm64 saturates while amd64 yields MinInt —
+// so the numeric comparisons below have to check before promoting a float to
+// an integer comparison.
+func floatFitsInt(f float64) bool {
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) {
+		return false
+	}
+	minInt := float64(math.MinInt)
+	return f >= minInt && f < -minInt
+}
+
 func compareFunc(op string, a, b any) (bool, error) {
 	var floatLeft, floatRight float64
 	var intLeft, intRight int
@@ -1059,13 +1072,13 @@ func compareFunc(op string, a, b any) (bool, error) {
 	if dtLeft == xDouble && dtRight == xInteger {
 		// If the float has a fractional part, use float comparison (e.g. 2.5 > 2).
 		// Otherwise promote to integer comparison for precision with large numbers.
-		if floatLeft != math.Trunc(floatLeft) || math.IsInf(floatLeft, 0) || math.IsNaN(floatLeft) {
+		if !floatFitsInt(floatLeft) {
 			return doCompareFloat(op, floatLeft, float64(intRight))
 		}
 		return doCompareInt(op, int(floatLeft), intRight)
 	}
 	if dtLeft == xInteger && dtRight == xDouble {
-		if floatRight != math.Trunc(floatRight) || math.IsInf(floatRight, 0) || math.IsNaN(floatRight) {
+		if !floatFitsInt(floatRight) {
 			return doCompareFloat(op, float64(intLeft), floatRight)
 		}
 		return doCompareInt(op, intLeft, int(floatRight))
