@@ -1,0 +1,85 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Lower bound is the version required by go.mod.
+        go: ['1.25.x', 'stable']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go vet ./...
+      - run: go test ./...
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go test -race ./...
+
+  qt3:
+    name: W3C QT3 conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out the QT3 test suite
+        uses: actions/checkout@v7
+        with:
+          repository: w3c/qt3tests
+          # Pinned so an upstream change cannot silently move the baseline in
+          # testdata/qt3_baseline.txt. Bump together with the baseline.
+          ref: 83993587711dbd5c18ed846385ec37d079d6e492
+          path: testdata/qt3tests
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # Fails if any test listed in testdata/qt3_baseline.txt regresses.
+      - run: go test -v -run TestQT3Survey .
+
+  crossbuild:
+    name: Cross build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 32-bit targets: see issue #5.
+        include:
+          - goos: linux
+            goarch: '386'
+          - goos: linux
+            goarch: arm
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
