@@ -53,7 +53,10 @@ func TestBooleanValue(t *testing.T) {
 
 func TestEval(t *testing.T) {
 	currentTimeGetter = func() time.Time {
-		return time.Unix(1700558398, 0)
+		// Pin the zone: the expected values below are written with a +01:00
+		// offset, so time.Unix's local zone would break the test everywhere
+		// outside CET (CI runs in UTC).
+		return time.Unix(1700558398, 0).In(time.FixedZone("CET", 60*60))
 	}
 	testdata := []struct {
 		input  string
@@ -592,7 +595,10 @@ func TestLang(t *testing.T) {
 
 func TestNSEval(t *testing.T) {
 	currentTimeGetter = func() time.Time {
-		return time.Unix(1700558398, 0)
+		// Pin the zone: the expected values below are written with a +01:00
+		// offset, so time.Unix's local zone would break the test everywhere
+		// outside CET (CI runs in UTC).
+		return time.Unix(1700558398, 0).In(time.FixedZone("CET", 60*60))
 	}
 	testdata := []struct {
 		input  string
