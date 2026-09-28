@@ -4185,6 +4185,7 @@ fn-function-lookup/fn-function-lookup-396
 fn-function-lookup/fn-function-lookup-398
 fn-function-lookup/fn-function-lookup-400
 fn-function-lookup/fn-function-lookup-401
+fn-function-lookup/fn-function-lookup-402
 fn-function-lookup/fn-function-lookup-403
 fn-function-lookup/fn-function-lookup-404
 fn-function-lookup/fn-function-lookup-405
@@ -18276,6 +18277,7 @@ prod-NamedFunctionRef/function-literal-396
 prod-NamedFunctionRef/function-literal-398
 prod-NamedFunctionRef/function-literal-400
 prod-NamedFunctionRef/function-literal-401
+prod-NamedFunctionRef/function-literal-402
 prod-NamedFunctionRef/function-literal-403
 prod-NamedFunctionRef/function-literal-404
 prod-NamedFunctionRef/function-literal-405

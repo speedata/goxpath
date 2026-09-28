@@ -381,6 +381,10 @@ func returnElementNameTest(name string) func(*Context, Item) bool {
 
 // Filter applies predicates to the context
 func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
+	// The predicate sets its own focus; the caller's position and size
+	// must be intact afterwards.
+	savePos, saveSize := ctx.Pos, ctx.size
+	defer func() { ctx.Pos, ctx.size = savePos, saveSize }()
 	var result Sequence
 	var lengths []int
 	var positions []int
@@ -441,7 +445,6 @@ func (ctx *Context) Filter(filter EvalFunc) (Sequence, error) {
 			result = append(result, itm)
 		}
 	}
-	ctx.size = len(result)
 	if len(result) == 0 {
 		result = Sequence{}
 	}
@@ -3136,7 +3139,7 @@ func parseSimpleMapExpr(tl *Tokenlist) (EvalFunc, error) {
 			saveSize := ctx.Size()
 			ctx.SetSize(len(result))
 			for pos, item := range result {
-				ctx.Pos = pos
+				ctx.Pos = pos + 1
 				ctx.SetContextSequence(Sequence{item})
 				seq, err := stepEf(ctx)
 				if err != nil {
@@ -3263,6 +3266,10 @@ func parseRelativePathExpr(tl *Tokenlist) (EvalFunc, error) {
 		var retseq Sequence
 		var seq Sequence
 		var err error
+		// Each step sets the focus for its items; the caller's position
+		// and size must be intact afterwards (issue #9).
+		savePos, saveSize := ctx.Pos, ctx.size
+		defer func() { ctx.Pos, ctx.size = savePos, saveSize }()
 		for i := 0; i < len(efs); i++ {
 			ef := efs[i]
 			retseq = retseq[:0]
@@ -3368,7 +3375,6 @@ func parseAxisStep(tl *Tokenlist) (EvalFunc, error) {
 			if err != nil {
 				return nil, err
 			}
-			ctx.size = len(ctx.sequence)
 		}
 		return ctx.sequence, nil
 	}
@@ -3533,7 +3539,6 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 			ret = append(ret, itm)
 		}
 		ctx.sequence = ret
-		ctx.size = len(ret)
 		return ret, nil
 	}
 

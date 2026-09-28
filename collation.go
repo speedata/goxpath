@@ -41,10 +41,10 @@ type Collation interface {
 
 // Standard collation URIs defined by XPath 3.1 / XSLT 3.0.
 const (
-	CodepointCollationURI            = "http://www.w3.org/2005/xpath-functions/collation/codepoint"
-	HTMLAsciiCaseInsensitiveURI      = "http://www.w3.org/2005/xpath-functions/collation/html-ascii-case-insensitive"
-	UCACollationURI                  = "http://www.w3.org/2013/collation/UCA"
-	UCACollationFallbackURI          = "http://www.w3.org/2013/collation/UCA/" // tolerated alias
+	CodepointCollationURI       = "http://www.w3.org/2005/xpath-functions/collation/codepoint"
+	HTMLAsciiCaseInsensitiveURI = "http://www.w3.org/2005/xpath-functions/collation/html-ascii-case-insensitive"
+	UCACollationURI             = "http://www.w3.org/2013/collation/UCA"
+	UCACollationFallbackURI     = "http://www.w3.org/2013/collation/UCA/" // tolerated alias
 )
 
 // CollationFactory builds a Collation from URI parameters.
@@ -123,13 +123,13 @@ func CodepointCollation() Collation {
 
 type codepointCollation struct{}
 
-func (codepointCollation) URI() string                  { return CodepointCollationURI }
-func (codepointCollation) Compare(a, b string) int      { return strings.Compare(a, b) }
-func (codepointCollation) Equal(a, b string) bool       { return a == b }
-func (codepointCollation) Contains(s, sub string) bool  { return strings.Contains(s, sub) }
-func (codepointCollation) StartsWith(s, p string) bool  { return strings.HasPrefix(s, p) }
-func (codepointCollation) EndsWith(s, suf string) bool  { return strings.HasSuffix(s, suf) }
-func (codepointCollation) Key(s string) string          { return s }
+func (codepointCollation) URI() string                 { return CodepointCollationURI }
+func (codepointCollation) Compare(a, b string) int     { return strings.Compare(a, b) }
+func (codepointCollation) Equal(a, b string) bool      { return a == b }
+func (codepointCollation) Contains(s, sub string) bool { return strings.Contains(s, sub) }
+func (codepointCollation) StartsWith(s, p string) bool { return strings.HasPrefix(s, p) }
+func (codepointCollation) EndsWith(s, suf string) bool { return strings.HasSuffix(s, suf) }
+func (codepointCollation) Key(s string) string         { return s }
 func (c codepointCollation) SubstringBefore(s, sub string) string {
 	if sub == "" {
 		return ""
@@ -170,9 +170,11 @@ func asciiFold(s string) string {
 	return b.String()
 }
 
-func (htmlAsciiCICollation) URI() string             { return HTMLAsciiCaseInsensitiveURI }
-func (htmlAsciiCICollation) Compare(a, b string) int { return strings.Compare(asciiFold(a), asciiFold(b)) }
-func (htmlAsciiCICollation) Equal(a, b string) bool  { return asciiFold(a) == asciiFold(b) }
+func (htmlAsciiCICollation) URI() string { return HTMLAsciiCaseInsensitiveURI }
+func (htmlAsciiCICollation) Compare(a, b string) int {
+	return strings.Compare(asciiFold(a), asciiFold(b))
+}
+func (htmlAsciiCICollation) Equal(a, b string) bool { return asciiFold(a) == asciiFold(b) }
 func (htmlAsciiCICollation) Contains(s, sub string) bool {
 	return strings.Contains(asciiFold(s), asciiFold(sub))
 }
@@ -217,18 +219,18 @@ type ucaCollation struct {
 // recognizedUCAParams lists the query parameters defined by the F&O 3.1
 // UCA collation URI scheme. Anything else triggers FOCH0002 when fallback=no.
 var recognizedUCAParams = map[string]bool{
-	"fallback":     true,
-	"lang":         true,
-	"version":     true,
-	"strength":     true,
-	"maxVariable":  true,
-	"alternate":    true,
-	"backwards":    true,
+	"fallback":      true,
+	"lang":          true,
+	"version":       true,
+	"strength":      true,
+	"maxVariable":   true,
+	"alternate":     true,
+	"backwards":     true,
 	"normalization": true,
-	"caseLevel":    true,
-	"caseFirst":    true,
-	"numeric":      true,
-	"reorder":      true,
+	"caseLevel":     true,
+	"caseFirst":     true,
+	"numeric":       true,
+	"reorder":       true,
 }
 
 func newUCACollation(uri string, params url.Values) (Collation, error) {
