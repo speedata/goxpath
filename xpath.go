@@ -332,15 +332,16 @@ func returnNamespaceNameTest(name string) func(*Context, Item) bool {
 	}
 }
 
-// returnElementEQNameTest creates a test function for element(Q{namespace}localname).
-// The eqname format is "namespace}localname".
+// returnElementEQNameTest creates a test function for the element name
+// tests Q{namespace}localname and Q{namespace}*. The eqname format is
+// "namespace}localname".
 func returnElementEQNameTest(eqname string) func(*Context, Item) bool {
 	before, after, _ := strings.Cut(eqname, "}")
 	ns := before
 	localName := after
 	return func(ctx *Context, itm Item) bool {
 		if elt, ok := itm.(*goxml.Element); ok {
-			if elt.Name != localName {
+			if localName != "*" && elt.Name != localName {
 				return false
 			}
 			eltNS := elt.Namespaces[elt.Prefix]
@@ -348,6 +349,34 @@ func returnElementEQNameTest(eqname string) func(*Context, Item) bool {
 		}
 		return false
 	}
+}
+
+// returnAttributeEQNameTest creates a test function for the attribute
+// name tests Q{namespace}localname and Q{namespace}*. The eqname format
+// is "namespace}localname".
+func returnAttributeEQNameTest(eqname string) func(*Context, Item) bool {
+	ns, localName, _ := strings.Cut(eqname, "}")
+	return func(ctx *Context, itm Item) bool {
+		attr, ok := itm.(*goxml.Attribute)
+		if !ok {
+			return false
+		}
+		if localName != "*" && attr.Name != localName {
+			return false
+		}
+		return attr.Namespace == ns
+	}
+}
+
+// returnNamespaceEQNameTest creates a test function for an EQName on the
+// namespace axis. The name of a namespace node is its prefix and has no
+// namespace URI, so only Q{}prefix and Q{}* can match.
+func returnNamespaceEQNameTest(eqname string) func(*Context, Item) bool {
+	ns, localName, _ := strings.Cut(eqname, "}")
+	if ns != "" {
+		return func(ctx *Context, itm Item) bool { return false }
+	}
+	return returnNamespaceNameTest(localName)
 }
 
 // splitNameTest splits a name test into prefix and local part. Either
@@ -3598,10 +3627,28 @@ func parseNodeTest(tl *Tokenlist) (testFunc, error) {
 	return tf, nil
 }
 
-// [36] NameTest ::= QName | Wildcard
+// [36] NameTest ::= EQName | Wildcard
 func parseNameTest(tl *Tokenlist) (testFunc, error) {
 	enterStep(tl, "36 parseNameTest")
 	var tf testFunc
+
+	if tl.nexttokIsTyp(tokEQName) {
+		n, err := tl.read()
+		if err != nil {
+			leaveStep(tl, "36 parseNameTest (err)")
+			return nil, err
+		}
+		eqname := n.String()
+		if tl.attributeMode {
+			tf = returnAttributeEQNameTest(eqname)
+		} else if tl.namespaceMode {
+			tf = returnNamespaceEQNameTest(eqname)
+		} else {
+			tf = returnElementEQNameTest(eqname)
+		}
+		leaveStep(tl, "36 parseNameTest")
+		return tf, nil
+	}
 
 	if tl.nexttokIsTyp(tokQName) {
 		n, err := tl.read()
@@ -4747,6 +4794,13 @@ func parseKindTest(tl *Tokenlist, name string) (testFunc, error) {
 			}
 			leaveStep(tl, "35 parseNodeTest")
 			return isAttribute, nil
+		} else if nexttok.Typ == tokEQName {
+			tl.read()
+			if err = tl.skipType(tokCloseParen); err != nil {
+				return nil, err
+			}
+			leaveStep(tl, "35 parseNodeTest")
+			return returnAttributeEQNameTest(nexttok.String()), nil
 		} else if nexttok.Typ == tokQName {
 			tl.read()
 			if err = tl.skipType(tokCloseParen); err != nil {

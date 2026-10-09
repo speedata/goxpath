@@ -16904,6 +16904,13 @@ prod-CurlyArrayConstructor/CurlyArray-002
 prod-CurlyArrayConstructor/CurlyArray-004
 prod-DirectConstructor/K2-DirectConOther-55
 prod-DirectConstructor/K2-DirectConOther-57
+prod-EQName/eqname-014
+prod-EQName/eqname-020
+prod-EQName/eqname-021
+prod-EQName/eqname-022
+prod-EQName/eqname-026
+prod-EQName/eqname-027
+prod-EQName/eqname-028
 prod-EQName/eqname-029p
 prod-EQName/eqname-034
 prod-EQName/eqname-904
@@ -16912,6 +16919,8 @@ prod-EQName/eqname-906
 prod-EQName/eqname-907
 prod-EQName/eqname-908
 prod-EQName/eqname-909p
+prod-EQName/eqname-911
+prod-EQName/eqname-912
 prod-EQName/eqname-913
 prod-ForClause/ForExpr001
 prod-ForClause/ForExpr005

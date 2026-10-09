@@ -379,7 +379,9 @@ func getQName(sr *strings.Reader) (string, error) {
 }
 
 // getEQName reads the rest of an EQName after "Q{" has been consumed.
-// It reads the namespace URI up to "}", then the local name.
+// It reads the namespace URI up to "}", then the local name, which is
+// "*" for the wildcard Q{namespace}*. Whitespace in the URI is
+// normalized as for xs:anyURI.
 // Returns "namespace}localname" as the token value.
 func getEQName(sr *strings.Reader) (string, error) {
 	var ns []rune
@@ -393,14 +395,21 @@ func getEQName(sr *strings.Reader) (string, error) {
 		}
 		ns = append(ns, r)
 	}
+	uri := strings.Join(strings.Fields(string(ns)), " ")
+	if r, _, err := sr.ReadRune(); err == nil {
+		if r == '*' {
+			return uri + "}*", nil
+		}
+		sr.UnreadRune()
+	}
 	localName, err := getQName(sr)
 	if err != nil {
 		return "", err
 	}
 	if localName == "" {
-		return "", fmt.Errorf("missing local name in Q{%s}", string(ns))
+		return "", fmt.Errorf("missing local name in Q{%s}", uri)
 	}
-	return string(ns) + "}" + localName, nil
+	return uri + "}" + localName, nil
 }
 
 func getDelimitedString(sr *strings.Reader) (string, error) {
