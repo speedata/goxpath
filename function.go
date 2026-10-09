@@ -68,6 +68,7 @@ const (
 	nsFN   = "http://www.w3.org/2005/xpath-functions"
 	nsXS   = "http://www.w3.org/2001/XMLSchema"
 	nsMath = "http://www.w3.org/2005/xpath-functions/math"
+	nsXML  = "http://www.w3.org/XML/1998/namespace"
 )
 
 func fnAbs(ctx *Context, args []Sequence) (Sequence, error) {
@@ -2259,7 +2260,7 @@ func fnNamespaceURIForPrefix(ctx *Context, args []Sequence) (Sequence, error) {
 		return Sequence{uri}, nil
 	}
 	if prefix == "xml" {
-		return Sequence{"http://www.w3.org/XML/1998/namespace"}, nil
+		return Sequence{nsXML}, nil
 	}
 	return Sequence{}, nil
 }
@@ -2428,7 +2429,7 @@ func fnLang(ctx *Context, args []Sequence) (Sequence, error) {
 	testLang = strings.ToLower(testLang)
 	for cur := node; cur != nil; {
 		for _, attr := range cur.Attributes() {
-			if attr.Name == "lang" && attr.Namespace == "http://www.w3.org/XML/1998/namespace" {
+			if attr.Name == "lang" && attr.Namespace == nsXML {
 				lang := strings.ToLower(attr.Value)
 				if lang == testLang || strings.HasPrefix(lang, testLang+"-") {
 					return Sequence{true}, nil

@@ -108,6 +108,8 @@ func NewContext(doc *goxml.XMLDocument) *Context {
 	ctx.Namespaces["math"] = nsMath
 	ctx.Namespaces["map"] = nsMap
 	ctx.Namespaces["array"] = nsArray
+	// The xml prefix is bound by definition and needs no declaration.
+	ctx.Namespaces["xml"] = nsXML
 	return ctx
 }
 

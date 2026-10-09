@@ -5045,6 +5045,7 @@ fn-local-name/fn-local-name-67
 fn-local-name/fn-local-name-72
 fn-local-name/fn-local-name-74
 fn-local-name/fn-local-name-75
+fn-local-name/fn-local-name-76
 fn-local-name/fn-local-name-79
 fn-local-name/fn-local-name-80
 fn-local-name/fn-local-name-81
@@ -6588,6 +6589,7 @@ fn-name/fn-name-17
 fn-name/fn-name-22
 fn-name/fn-name-24
 fn-name/fn-name-25
+fn-name/fn-name-26
 fn-name/fn-name-29
 fn-name/fn-name-30
 fn-name/fn-name-31
@@ -8231,6 +8233,7 @@ fn-string/K-StringFunc-5
 fn-string/fn-string-2
 fn-string/fn-string-24
 fn-string/fn-string-25
+fn-string/fn-string-26
 fn-string/fn-string-28
 fn-string/fn-string-29
 fn-string/fn-string-30

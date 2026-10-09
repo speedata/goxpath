@@ -316,7 +316,7 @@ func (ctx *Context) namespaceAxis(tf testFunc) (Sequence, error) {
 		for _, prefix := range prefixes {
 			uri, ok := elt.Namespaces[prefix]
 			if !ok {
-				uri = "http://www.w3.org/XML/1998/namespace"
+				uri = nsXML
 			}
 			nsNode := goxml.NamespaceNode{ID: goxml.NewID(), Prefix: prefix, URI: uri}
 			if tf(ctx, nsNode) {

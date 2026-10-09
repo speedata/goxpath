@@ -46,6 +46,20 @@ func TestChildAxisNoAttributes(t *testing.T) {
 	})
 }
 
+// TestXMLPrefix checks that the xml prefix is bound without a
+// declaration (issue #11).
+func TestXMLPrefix(t *testing.T) {
+	doc := `<root xml:lang="en"><p xml:space="preserve" xml:id="p1"/></root>`
+	evalStrings(t, doc, []struct{ expr, want string }{
+		{"/root/@xml:lang", "en"},
+		{"/root/p/@xml:id", "p1"},
+		{"/root/@* ! name()", "xml:lang"},
+		{"/root/@* ! namespace-uri()", "http://www.w3.org/XML/1998/namespace"},
+		{"/root/p/@xml:* ! local-name()", "space id"},
+		{"/root/@* ! prefix-from-QName(node-name())", "xml"},
+	})
+}
+
 // TestAttributeKindTestDefaultAxis checks that a step with an
 // attribute() kind test and no axis selects on the attribute axis.
 func TestAttributeKindTestDefaultAxis(t *testing.T) {
