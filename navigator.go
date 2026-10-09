@@ -18,11 +18,6 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 				}
 			}
 		case *goxml.Element:
-			for _, cld := range t.Attributes() {
-				if tf(ctx, cld) {
-					seq = append(seq, cld)
-				}
-			}
 			for _, cld := range t.Children() {
 				if tf(ctx, cld) {
 					if cd, ok := cld.(goxml.CharData); ok {
@@ -43,11 +38,7 @@ func (ctx *Context) childAxis(tf testFunc) (Sequence, error) {
 		case goxml.NamespaceNode:
 			// Namespace nodes have no children.
 		case *goxml.Attribute:
-			// Attributes have no children. Without this case the
-			// switch falls through to the default branch when an
-			// attribute name happens to collide with a reserved
-			// keyword (e.g. @float, @int) and the parser routes the
-			// step through the child axis.
+			// Attributes have no children.
 		case Sequence:
 			for _, itm := range t {
 				if tf(ctx, itm) {
@@ -275,6 +266,28 @@ func (ctx *Context) followingSiblingAxis(tf testFunc) (Sequence, error) {
 					}
 				}
 			}
+		}
+	}
+	ctx.sequence = seq
+	return seq, nil
+}
+
+// attributeAxis returns the attributes of the context elements. Other
+// node kinds have no attributes.
+func (ctx *Context) attributeAxis(tf testFunc) (Sequence, error) {
+	var seq Sequence
+	for _, n := range ctx.sequence {
+		switch t := n.(type) {
+		case *goxml.Element:
+			for _, attr := range t.Attributes() {
+				if tf(ctx, attr) {
+					seq = append(seq, attr)
+				}
+			}
+		case goxml.XMLNode, string:
+			// No attributes. Text nodes are passed around as strings.
+		default:
+			return nil, NewXPathError("XPTY0020", fmt.Sprintf("context item %T for the attribute axis is not a node", t))
 		}
 	}
 	ctx.sequence = seq

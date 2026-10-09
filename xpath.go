@@ -3397,6 +3397,7 @@ const (
 	axisAncestorOrSelf
 	axisPreceding
 	axisPrecedingSibling
+	axisAttribute
 	axisNamespace
 )
 
@@ -3424,6 +3425,8 @@ func (a axis) String() string {
 		return "preceding"
 	case axisPrecedingSibling:
 		return "preceding-sibling"
+	case axisAttribute:
+		return "attribute"
 	case axisNamespace:
 		return "namespace"
 	}
@@ -3437,10 +3440,12 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 	var err error
 
 	stepAxis := axisChild
+	explicitAxis := false
 	tl.attributeMode = false
 	tl.namespaceMode = false
 
 	if tl.nexttokIsTyp(tokDoubleColon) {
+		explicitAxis = true
 		nexttok, err := tl.read()
 		if err != nil {
 			return nil, err
@@ -3448,6 +3453,7 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 
 		switch nexttok.Value.(string) {
 		case "attribute":
+			stepAxis = axisAttribute
 			tl.attributeMode = true
 		case "child":
 			stepAxis = axisChild
@@ -3489,7 +3495,16 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 
 	if tl.nexttokIsValue("@") {
 		tl.read() // @
+		stepAxis = axisAttribute
 		tl.attributeMode = true
+	} else if !explicitAxis && tl.nexttokIsTyp(tokQName) && tl.nexttokIsValue("attribute") {
+		// Without an explicit axis, an attribute() kind test selects
+		// on the attribute axis.
+		tl.read()
+		if tl.nexttokIsTyp(tokOpenParen) {
+			stepAxis = axisAttribute
+		}
+		tl.unread()
 	}
 	var tf testFunc
 	if tf, err = parseNodeTest(tl); err != nil {
@@ -3526,6 +3541,8 @@ func parseForwardStep(tl *Tokenlist) (EvalFunc, error) {
 			_, err = ctx.precedingSiblingAxis(tf)
 		case axisPreceding:
 			_, err = ctx.precedingAxis(tf)
+		case axisAttribute:
+			_, err = ctx.attributeAxis(tf)
 		case axisNamespace:
 			_, err = ctx.namespaceAxis(tf)
 		default:
