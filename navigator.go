@@ -129,58 +129,14 @@ func (ctx *Context) descendantOrSelfAxis(tf testFunc) (Sequence, error) {
 func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 	var seq Sequence
 	for _, n := range ctx.sequence {
+		var children []goxml.XMLNode
 		switch t := n.(type) {
 		case *goxml.XMLDocument:
-			for _, cld := range t.Children() {
-				copysequence := ctx.sequence
-				ctx.sequence = Sequence{cld}
-				s, err := ctx.descendantAxis(tf)
-				if err != nil {
-					return nil, err
-				}
-				for _, itm := range s {
-					seq = append(seq, itm)
-				}
-				ctx.sequence = copysequence
-				if tf(ctx, cld) {
-					seq = append(seq, cld)
-				}
-			}
+			children = t.Children()
 		case *goxml.Element:
-			for _, cld := range t.Children() {
-				copysequence := ctx.sequence
-				ctx.sequence = Sequence{cld}
-				s, err := ctx.descendantAxis(tf)
-				if err != nil {
-					return nil, err
-				}
-				for _, itm := range s {
-					seq = append(seq, itm)
-				}
-				ctx.sequence = copysequence
-				if tf(ctx, cld) {
-					seq = append(seq, cld)
-				}
-			}
-		case goxml.CharData:
-			if tf(ctx, t) {
-				seq = append(seq, t.Contents)
-			}
-		case goxml.Comment:
-			if tf(ctx, t) {
-				seq = append(seq, t)
-			}
-		case goxml.ProcInst:
-			if tf(ctx, t) {
-				seq = append(seq, t)
-			}
-		case goxml.NamespaceNode:
-			if tf(ctx, t) {
-				seq = append(seq, t)
-			}
-		case *goxml.Attribute:
-			// Attributes have no descendants; the descendant axis
-			// (which excludes self) returns the empty sequence.
+			children = t.Children()
+		case goxml.CharData, goxml.Comment, goxml.ProcInst, goxml.NamespaceNode, *goxml.Attribute:
+			// These nodes have no descendants.
 		case Sequence:
 			for _, itm := range t {
 				if tf(ctx, itm) {
@@ -189,6 +145,16 @@ func (ctx *Context) descendantAxis(tf testFunc) (Sequence, error) {
 			}
 		default:
 			return nil, fmt.Errorf("descendantAxis nyi %T", t)
+		}
+		// The descendants are the children, each followed by its own
+		// descendants, in document order.
+		for _, cld := range children {
+			ctx.sequence = Sequence{cld}
+			s, err := ctx.descendantOrSelfAxis(tf)
+			if err != nil {
+				return nil, err
+			}
+			seq = append(seq, s...)
 		}
 	}
 	ctx.sequence = seq
